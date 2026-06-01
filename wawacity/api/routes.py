@@ -1,9 +1,10 @@
+import json
 from fastapi import APIRouter, Request, Query, Path
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
 from typing import Optional
 
 from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD
-from wawacity.utils.validators import validate_config
+from wawacity.utils.validators import validate_config, decode_config, normalize_wawacity_url
 from wawacity.services.stream import stream_service
 from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
@@ -12,30 +13,43 @@ from wawacity.utils.logger import logger
 
 router = APIRouter()
 
+
+def _render_configure_html(initial_config: Optional[dict] = None) -> str:
+    with open("wawacity/public/index.html", "r", encoding="utf-8") as f:
+        html_content = f.read()
+
+    html_content = html_content.replace("{{CUSTOM_HTML}}", CUSTOM_HTML)
+    html_content = html_content.replace("{{DEFAULT_WAWACITY_URL}}", WAWACITY_URL)
+    config_json = json.dumps(initial_config) if initial_config else "null"
+    html_content = html_content.replace("{{INITIAL_CONFIG}}", config_json)
+
+    return html_content
+
+
 # --- Main routes ---
 @router.get("/", summary="Accueil", description="Redirection automatique vers la page de configuration")
 async def root():
     return RedirectResponse("/configure")
 
-@router.get("/configure", summary="Configuration", description="Interface web pour configurer vos clés API AllDebrid et TMDB")
+@router.get(
+    "/configure",
+    summary="Configuration",
+    description="Interface web pour configurer AllDebrid, TMDB et l'URL Wawacity",
+)
 async def configure():
-    with open("wawacity/public/index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    
-    html_content = html_content.replace("{{CUSTOM_HTML}}", CUSTOM_HTML)
-    
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(content=_render_configure_html())
 
-@router.get("/{b64config}/configure", summary="Reconfigurer", description="Modifier la configuration existante avec vos nouvelles clés API")
+@router.get(
+    "/{b64config}/configure",
+    summary="Reconfigurer",
+    description="Modifier la configuration existante",
+)
 async def configure_addon(
-    b64config: str = Path(..., description="Configuration encodée (base64) avec clés API AllDebrid/TMDB")
+    b64config: str = Path(
+        ..., description="Configuration encodée (base64) avec clés API et URL Wawacity"
+    ),
 ):
-    with open("wawacity/public/index.html", "r", encoding="utf-8") as f:
-        html_content = f.read()
-    
-    html_content = html_content.replace("{{CUSTOM_HTML}}", CUSTOM_HTML)
-    
-    return HTMLResponse(content=html_content)
+    return HTMLResponse(content=_render_configure_html(decode_config(b64config)))
 
 # --- Manifest route ---
 @router.get("/{b64config}/manifest.json", summary="Manifest Stremio", description="Informations de l'addon pour l'installation dans Stremio")
@@ -113,20 +127,26 @@ async def resolve(
 async def debug_search(
     title: str = Query(..., description="Titre du film ou série à rechercher"),
     year: Optional[str] = Query(None, description="Année de sortie (optionnel)"),
-    type: str = Query("film", description="Type de contenu: 'film' ou 'serie'")
+    type: str = Query("film", description="Type de contenu: 'film' ou 'serie'"),
+    wawacity_url: Optional[str] = Query(
+        None, description="URL Wawacity (sinon valeur WAWACITY_URL du serveur)"
+    ),
 ):
     try:
+        base_url = normalize_wawacity_url(wawacity_url) if wawacity_url else WAWACITY_URL
+
         if type == "serie":
-            results = await series_scraper.search(title, year)
+            results = await series_scraper.search(title, year, base_url)
         else:
-            results = await movie_scraper.search(title, year)
-        
+            results = await movie_scraper.search(title, year, base_url)
+
         return {
             "title": title,
             "year": year,
             "type": type,
+            "wawacity_url": base_url,
             "count": len(results),
-            "results": results
+            "results": results,
         }
     except Exception as e:
         return {
@@ -161,17 +181,26 @@ async def debug_alldebrid(
 @router.get("/health", 
            summary="État de santé", 
            description="Teste l'état du serveur, de Wawacity, de la base de données et du proxy")
-async def health_check():
+async def health_check(
+    wawacity_url: Optional[str] = Query(
+        None, description="URL Wawacity à tester (sinon WAWACITY_URL du serveur)"
+    ),
+):
     import time
     from wawacity.utils.http_client import http_client
     from wawacity.utils.database import database
-    
+
+    target_wawacity_url = (
+        normalize_wawacity_url(wawacity_url) if wawacity_url else WAWACITY_URL
+    )
+
     start_time = time.time()
     health_status = {
         "status": "healthy",
         "version": ADDON_MANIFEST["version"],
         "timestamp": int(time.time()),
-        "checks": {}
+        "wawacity_url": target_wawacity_url,
+        "checks": {},
     }
     
     # --- Server test ---
@@ -197,7 +226,7 @@ async def health_check():
     # --- Wawacity test ---
     wawacity_start = time.time()
     try:
-        response = await http_client.get(WAWACITY_URL, timeout=5)
+        response = await http_client.get(target_wawacity_url, timeout=5)
         wawacity_time = round((time.time() - wawacity_start) * 1000)
         
         if response.status_code == 200:

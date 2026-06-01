@@ -587,7 +587,7 @@
                         </svg>
                         GitHub
                     </a>
-                    <a href="https://wawacity.diy" target="_blank" class="link">
+                    <a href="{{DEFAULT_WAWACITY_URL}}" target="_blank" class="link">
                         <svg viewBox="0 0 24 24" fill="currentColor">
                             <path fill-rule="evenodd" d="M19.902 4.098a3.75 3.75 0 00-5.304 0l-4.5 4.5a3.75 3.75 0 001.035 6.037.75.75 0 01-.646 1.353 5.25 5.25 0 01-1.449-8.45l4.5-4.5a5.25 5.25 0 117.424 7.424l-1.757 1.757a.75.75 0 11-1.06-1.06l1.757-1.757a3.75 3.75 0 000-5.304zm-7.804 9.804a3.75 3.75 0 00-1.035-6.037.75.75 0 01.646-1.353 5.25 5.25 0 011.449 8.45l-4.5 4.5a5.25 5.25 0 01-7.424-7.424l1.757-1.757a.75.75 0 111.06 1.06l-1.757 1.757a3.75 3.75 0 105.304 5.304l4.5-4.5z" clip-rule="evenodd" />
                         </svg>
@@ -634,6 +634,22 @@
                             <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.67-1.34l.04-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
                         </svg>
                         Obtenez votre token depuis <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org/settings/api</a>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="wawacity_url">URL Wawacity</label>
+                    <div class="input-group">
+                        <input type="url" id="wawacity_url" class="input" placeholder="https://www.wawacity.team" autocomplete="off">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M12.97 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963zM12 9a3.75 3.75 0 100 7.5A3.75 3.75 0 0012 9zm-8.25 3.75a8.25 8.25 0 1116.5 0 8.25 8.25 0 01-16.5 0z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="help-text">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.67-1.34l.04-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+                        </svg>
+                        Miroir Wawacity utilisé pour la recherche (ex. <a href="https://www.wawacity.team" target="_blank">wawacity.team</a>)
                     </div>
                 </div>
             </section>
@@ -729,7 +745,8 @@
                 </div>
                 <div class="info-content">
                     <p><strong>AllDebrid (Premium requis):</strong> Connectez-vous sur <a href="https://alldebrid.com/apikeys" target="_blank">alldebrid.com/apikeys</a> et générez votre clé API</p><br>
-                    <p><strong>TMDB (Compte gratuit):</strong> Créez un compte et obtenez votre token depuis <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org/settings/api</a></p>
+                    <p><strong>TMDB (Compte gratuit):</strong> Créez un compte et obtenez votre token depuis <a href="https://www.themoviedb.org/settings/api" target="_blank">themoviedb.org/settings/api</a></p><br>
+                    <p><strong>Wawacity:</strong> Indiquez l'URL du miroir accessible depuis votre réseau (sans slash final).</p>
                 </div>
             </div>
         </div>
@@ -737,8 +754,47 @@
     
     <script>
         // --- Global Variables ---
+        const DEFAULT_WAWACITY_URL = "{{DEFAULT_WAWACITY_URL}}";
+        const INITIAL_CONFIG = {{INITIAL_CONFIG}};
         let excludedWords = [];
         let passwordRequired = false;
+
+        function normalizeWawacityUrl(url) {
+            return url.trim().replace(/\/+$/, "");
+        }
+
+        function isValidWawacityUrl(url) {
+            try {
+                const parsed = new URL(url);
+                return parsed.protocol === "http:" || parsed.protocol === "https:";
+            } catch {
+                return false;
+            }
+        }
+
+        function loadInitialConfig() {
+            const wawacityInput = document.getElementById("wawacity_url");
+
+            if (INITIAL_CONFIG && typeof INITIAL_CONFIG === "object") {
+                if (INITIAL_CONFIG.alldebrid) {
+                    document.getElementById("alldebrid").value = INITIAL_CONFIG.alldebrid;
+                }
+                if (INITIAL_CONFIG.tmdb) {
+                    document.getElementById("tmdb").value = INITIAL_CONFIG.tmdb;
+                }
+                if (INITIAL_CONFIG.wawacity_url) {
+                    wawacityInput.value = INITIAL_CONFIG.wawacity_url;
+                }
+                if (Array.isArray(INITIAL_CONFIG.excluded_words)) {
+                    excludedWords = INITIAL_CONFIG.excluded_words;
+                    updateTagsDisplay();
+                }
+            }
+
+            if (!wawacityInput.value.trim()) {
+                wawacityInput.value = DEFAULT_WAWACITY_URL;
+            }
+        }
 
         // --- Excluded Words Management ---
         function addExcludedWord() {
@@ -791,11 +847,17 @@
         async function generateLink() {
             const alldebrid = document.getElementById('alldebrid').value.trim();
             const tmdb = document.getElementById('tmdb').value.trim();
+            const wawacityUrl = normalizeWawacityUrl(document.getElementById('wawacity_url').value);
             const password = document.getElementById('addonPassword').value.trim();
             const generateBtn = document.getElementById('generateBtn');
             
-            if (!alldebrid || !tmdb) {
-                showNotification('Veuillez remplir les deux champs API', 'error');
+            if (!alldebrid || !tmdb || !wawacityUrl) {
+                showNotification('Veuillez remplir tous les champs de configuration', 'error');
+                return;
+            }
+
+            if (!isValidWawacityUrl(wawacityUrl)) {
+                showNotification('URL Wawacity invalide (http ou https requis)', 'error');
                 return;
             }
             
@@ -829,6 +891,7 @@
                 const config = {
                     alldebrid: alldebrid,
                     tmdb: tmdb,
+                    wawacity_url: wawacityUrl,
                     excluded_words: excludedWords
                 };
                 const configBase64 = btoa(JSON.stringify(config));
@@ -976,6 +1039,7 @@
         }
 
         // --- Event Listeners ---
+        loadInitialConfig();
         document.getElementById('alldebrid').focus();
         loadPasswordConfig();
         document.addEventListener('keypress', function(e) {

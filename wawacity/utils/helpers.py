@@ -7,11 +7,27 @@ from base64 import b64encode, b64decode
 def encode_config_to_base64(config: Dict[str, Any]) -> str:
     return b64encode(json.dumps(config).encode()).decode()
 
+# --- Wawacity URL from user config or environment ---
+def get_wawacity_url(config: Dict[str, Any]) -> str:
+    from wawacity.core.config import WAWACITY_URL
+
+    url = (config.get("wawacity_url") or WAWACITY_URL).strip().rstrip("/")
+    return url
+
 # --- Cache key creation ---
-def create_cache_key(cache_type: str, title: str, year: Optional[str] = None) -> str:
+def create_cache_key(
+    cache_type: str,
+    title: str,
+    year: Optional[str] = None,
+    wawacity_url: Optional[str] = None,
+) -> str:
     cache_key = f"{cache_type}:{quote_plus(title.lower())}"
     if year:
         cache_key += f":{year}"
+    if wawacity_url:
+        host = urlparse(wawacity_url).netloc
+        if host:
+            cache_key += f":{host}"
     return cache_key
 
 # --- Filename extraction from dl-protect links ---

@@ -6,7 +6,7 @@ from wawacity.scrapers.series import series_scraper
 from wawacity.utils.database import SearchLock, is_dead_link, mark_dead_link, database
 from wawacity.utils.cache import get_cache, set_cache
 from wawacity.utils.validators import extract_media_info
-from wawacity.utils.helpers import encode_config_to_base64, quote_url_param
+from wawacity.utils.helpers import encode_config_to_base64, quote_url_param, get_wawacity_url
 from wawacity.utils.logger import logger
 from wawacity.core.config import CONTENT_CACHE_TTL, DEAD_LINK_TTL
 
@@ -27,12 +27,15 @@ class StreamService:
             logger.error("Check: 1) Valid IMDB ID 2) Valid TMDB key 3) Network connectivity")
             return []
         
+        wawacity_url = get_wawacity_url(config)
+
         results = await self._search_content(
             metadata["title"],
             metadata.get("year"),
             content_type,
             media_info.get("season"),
-            media_info.get("episode")
+            media_info.get("episode"),
+            wawacity_url,
         )
         
         if not results:
@@ -65,36 +68,53 @@ class StreamService:
         return await tmdb_service.get_metadata(imdb_id, tmdb_key)
     
     # --- Content search dispatcher ---
-    async def _search_content(self, title: str, year: Optional[str], 
-                             content_type: str, season: Optional[str], 
-                             episode: Optional[str]) -> List[Dict]:
+    async def _search_content(
+        self,
+        title: str,
+        year: Optional[str],
+        content_type: str,
+        season: Optional[str],
+        episode: Optional[str],
+        wawacity_url: str,
+    ) -> List[Dict]:
         if content_type == "series":
-            return await self._search_series(title, year, season, episode)
+            return await self._search_series(title, year, season, episode, wawacity_url)
         else:
-            return await self._search_movie(title, year)
+            return await self._search_movie(title, year, wawacity_url)
     
     # --- Movie search with cache ---
-    async def _search_movie(self, title: str, year: Optional[str]) -> List[Dict]:
+    async def _search_movie(self, title: str, year: Optional[str], wawacity_url: str) -> List[Dict]:
         async with SearchLock("film", title, year):
-            cached_results = await get_cache(database, "film", title, year)
+            cached_results = await get_cache(database, "film", title, year, wawacity_url)
             if cached_results is not None:
                 return cached_results
-            
-            results = await movie_scraper.search(title, year)
-            
+
+            results = await movie_scraper.search(title, year, wawacity_url)
+
             if results:
                 await set_cache(
-                    database, "film", title, year, 
-                    results, CONTENT_CACHE_TTL
+                    database,
+                    "film",
+                    title,
+                    year,
+                    results,
+                    CONTENT_CACHE_TTL,
+                    wawacity_url,
                 )
             
             return results
     
     # --- Series search with cache and filtering ---
-    async def _search_series(self, title: str, year: Optional[str], 
-                            season: Optional[str], episode: Optional[str]) -> List[Dict]:
+    async def _search_series(
+        self,
+        title: str,
+        year: Optional[str],
+        season: Optional[str],
+        episode: Optional[str],
+        wawacity_url: str,
+    ) -> List[Dict]:
         async with SearchLock("serie", title, year):
-            cached_results = await get_cache(database, "serie", title, year)
+            cached_results = await get_cache(database, "serie", title, year, wawacity_url)
             if cached_results is not None:
                 if season and episode:
                     filtered = [
@@ -105,12 +125,17 @@ class StreamService:
                     return filtered
                 return cached_results
             
-            results = await series_scraper.search(title, year)
-            
+            results = await series_scraper.search(title, year, wawacity_url)
+
             if results:
                 await set_cache(
-                    database, "serie", title, year, 
-                    results, CONTENT_CACHE_TTL
+                    database,
+                    "serie",
+                    title,
+                    year,
+                    results,
+                    CONTENT_CACHE_TTL,
+                    wawacity_url,
                 )
             
             if season and episode:

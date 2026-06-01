@@ -6,8 +6,14 @@ from wawacity.utils.helpers import create_cache_key
 from wawacity.utils.logger import logger
 
 # --- Cache retrieval ---
-async def get_cache(database, cache_type: str, title: str, year: Optional[str] = None) -> Optional[List[Dict]]:
-    cache_key = create_cache_key(cache_type, title, year)
+async def get_cache(
+    database,
+    cache_type: str,
+    title: str,
+    year: Optional[str] = None,
+    wawacity_url: Optional[str] = None,
+) -> Optional[List[Dict]]:
+    cache_key = create_cache_key(cache_type, title, year, wawacity_url)
     
     current_time = time.time()
     result = await database.fetch_one(
@@ -28,9 +34,16 @@ async def get_cache(database, cache_type: str, title: str, year: Optional[str] =
         return None
 
 # --- Cache storage ---
-async def set_cache(database, cache_type: str, title: str, year: Optional[str] = None, 
-                   results: Optional[List] = None, ttl: int = 3600):
-    cache_key = create_cache_key(cache_type, title, year)
+async def set_cache(
+    database,
+    cache_type: str,
+    title: str,
+    year: Optional[str] = None,
+    results: Optional[List] = None,
+    ttl: int = 3600,
+    wawacity_url: Optional[str] = None,
+):
+    cache_key = create_cache_key(cache_type, title, year, wawacity_url)
     
     current_time = time.time()
     expires_at = current_time + ttl

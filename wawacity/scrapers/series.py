@@ -11,15 +11,22 @@ from selectolax.parser import HTMLParser
 class SeriesScraper(BaseScraper):
     
     # --- Main search entry point ---
-    async def search(self, title: str, year: Optional[str] = None) -> List[Dict]:
+    async def search(
+        self,
+        title: str,
+        year: Optional[str] = None,
+        wawacity_url: Optional[str] = None,
+    ) -> List[Dict]:
+        base_url = (wawacity_url or WAWACITY_URL).rstrip("/")
+
         try:
             # --- Search for series ---
-            search_result = await self._search_series(title, year)
+            search_result = await self._search_series(title, year, base_url)
             if not search_result:
                 return []
-            
+
             # --- Extract all episodes ---
-            all_episodes = await self._extract_all_episodes(search_result)
+            all_episodes = await self._extract_all_episodes(search_result, base_url)
             
             # --- Sort by season then episode ---
             all_episodes.sort(key=lambda x: (
@@ -35,9 +42,11 @@ class SeriesScraper(BaseScraper):
             return []
     
     # --- Initial series search ---
-    async def _search_series(self, title: str, year: Optional[str] = None) -> Optional[Dict]:
+    async def _search_series(
+        self, title: str, year: Optional[str], base_url: str
+    ) -> Optional[Dict]:
         encoded_title = quote_url_param(str(title)[:31])
-        search_url = f"{WAWACITY_URL}/?p=series&search={encoded_title}"
+        search_url = f"{base_url}/?p=series&search={encoded_title}"
         if year:
             search_url += f"&year={str(year)}"
         
@@ -60,7 +69,7 @@ class SeriesScraper(BaseScraper):
             first_link = search_nodes[0].attributes.get("href", "")
             
             # --- Step 2: Get series title from page ---
-            series_url = f"{WAWACITY_URL}/{first_link}"
+            series_url = f"{base_url}/{first_link}"
             response2 = await http_client.get(series_url)
             if response2.status_code != 200:
                 return None
@@ -89,10 +98,12 @@ class SeriesScraper(BaseScraper):
             return None
     
     # --- Extract all episodes from series ---
-    async def _extract_all_episodes(self, search_result: Dict) -> List[Dict]:
+    async def _extract_all_episodes(
+        self, search_result: Dict, base_url: str
+    ) -> List[Dict]:
         all_results = []
         series_link = search_result["link"]
-        series_url = f"{WAWACITY_URL}/{series_link}"
+        series_url = f"{base_url}/{series_link}"
         
         try:
             all_series_pages = []
@@ -163,7 +174,7 @@ class SeriesScraper(BaseScraper):
             page_tasks = []
             for series_page in all_series_pages:
                 page_tasks.append(
-                    self._extract_episodes_from_page(series_page)
+                    self._extract_episodes_from_page(series_page, base_url)
                 )
             
             page_results = await asyncio.gather(*page_tasks, return_exceptions=True)
@@ -179,7 +190,9 @@ class SeriesScraper(BaseScraper):
         return all_results
     
     # --- Extract episodes from single page ---
-    async def _extract_episodes_from_page(self, series_page: Dict) -> List[Dict]:
+    async def _extract_episodes_from_page(
+        self, series_page: Dict, base_url: str
+    ) -> List[Dict]:
         page_results = []
         page_path = series_page.get("page_path", "")
         default_quality = series_page.get("quality", "N/A")
@@ -188,7 +201,7 @@ class SeriesScraper(BaseScraper):
         if not page_path:
             return page_results
         
-        series_page_url = f"{WAWACITY_URL}/{page_path}"
+        series_page_url = f"{base_url}/{page_path}"
         
         try:
             response = await http_client.get(series_page_url)
@@ -266,7 +279,7 @@ class SeriesScraper(BaseScraper):
                         if not url:
                             continue
                         
-                        url = format_url(url, WAWACITY_URL)
+                        url = format_url(url, base_url)
                         
                         # --- Extract filename ---
                         link_text = link_node.text(strip=True) if link_node else ""

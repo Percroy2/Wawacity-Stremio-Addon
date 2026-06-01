@@ -11,18 +11,28 @@ from selectolax.parser import HTMLParser
 class MovieScraper(BaseScraper):
     
     # --- Main search entry point ---
-    async def search(self, title: str, year: Optional[str] = None) -> List[Dict]:
+    async def search(
+        self,
+        title: str,
+        year: Optional[str] = None,
+        wawacity_url: Optional[str] = None,
+    ) -> List[Dict]:
+        base_url = (wawacity_url or WAWACITY_URL).rstrip("/")
+
         try:
             # --- Search for movie ---
-            search_result = await self._search_movie(title, year)
+            search_result = await self._search_movie(title, year, base_url)
             if not search_result:
                 return []
-            
+
             # --- Extract available qualities ---
-            qualities_data = await self._extract_qualities(search_result)
-            
+            qualities_data = await self._extract_qualities(search_result, base_url)
+
             # --- Extract links for each quality in parallel ---
-            tasks = [self._extract_links_for_quality(quality) for quality in qualities_data]
+            tasks = [
+                self._extract_links_for_quality(quality, base_url)
+                for quality in qualities_data
+            ]
             results_lists = await asyncio.gather(*tasks, return_exceptions=True)
             
             # --- Merge all results ---
@@ -43,9 +53,11 @@ class MovieScraper(BaseScraper):
             return []
     
     # --- Initial movie search ---
-    async def _search_movie(self, title: str, year: Optional[str] = None) -> Optional[Dict]:
+    async def _search_movie(
+        self, title: str, year: Optional[str], base_url: str
+    ) -> Optional[Dict]:
         encoded_title = quote_url_param(str(title)[:31])
-        search_url = f"{WAWACITY_URL}/?p=films&search={encoded_title}"
+        search_url = f"{base_url}/?p=films&search={encoded_title}"
         if year:
             search_url += f"&year={str(year)}"
         
@@ -68,7 +80,7 @@ class MovieScraper(BaseScraper):
             first_link = search_nodes[0].attributes.get("href", "")
             
             # --- Step 2: Get movie title from page ---
-            movie_url = f"{WAWACITY_URL}/{first_link}"
+            movie_url = f"{base_url}/{first_link}"
             response2 = await http_client.get(movie_url)
             if response2.status_code != 200:
                 return None
@@ -97,7 +109,7 @@ class MovieScraper(BaseScraper):
             return None
     
     # --- Extract available qualities ---
-    async def _extract_qualities(self, search_result: Dict) -> List[Dict]:
+    async def _extract_qualities(self, search_result: Dict, base_url: str) -> List[Dict]:
         qualities_data = []
         page_link = search_result["link"]
         node_text = search_result["text"]
@@ -122,7 +134,7 @@ class MovieScraper(BaseScraper):
             })
         
         # --- Get other available qualities ---
-        movie_url = f"{WAWACITY_URL}/{page_link}"
+        movie_url = f"{base_url}/{page_link}"
         
         try:
             response = await http_client.get(movie_url)
@@ -154,7 +166,9 @@ class MovieScraper(BaseScraper):
         return qualities_data
     
     # --- Extract links for specific quality ---
-    async def _extract_links_for_quality(self, quality_data: Dict) -> List[Dict]:
+    async def _extract_links_for_quality(
+        self, quality_data: Dict, base_url: str
+    ) -> List[Dict]:
         results = []
         page_path = quality_data.get("page_path", "")
         quality_txt = quality_data.get("quality", "?")
@@ -163,7 +177,7 @@ class MovieScraper(BaseScraper):
         if not page_path:
             return results
         
-        movie_page_url = f"{WAWACITY_URL}/{page_path}"
+        movie_page_url = f"{base_url}/{page_path}"
         
         try:
             response = await http_client.get(movie_page_url)
@@ -205,7 +219,7 @@ class MovieScraper(BaseScraper):
                 if not url:
                     continue
                 
-                url = format_url(url, WAWACITY_URL)
+                url = format_url(url, base_url)
                 
                 # --- Extract filename ---
                 link_text = link_node.text(strip=True) if link_node else ""

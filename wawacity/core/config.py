@@ -13,7 +13,7 @@ ADDON_NAME = environ.get("ADDON_NAME", "Wawacity AD")
 PORT = int(environ.get("PORT", "7000"))
 
 # --- Source configuration ---
-WAWACITY_URL = environ.get("WAWACITY_URL", "https://wawacity.diy")
+WAWACITY_URL = environ.get("WAWACITY_URL", "https://wawacity.diy").rstrip("/")
 
 # --- Database configuration ---
 DATABASE_VERSION = "1.0"
