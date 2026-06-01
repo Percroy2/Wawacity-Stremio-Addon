@@ -5,9 +5,12 @@ def wawacity_href_to_stremio_id(href: str) -> Optional[str]:
     if not href:
         return None
 
-    raw = href
-    if raw.startswith("?p=ebook&id="):
-        raw = raw.split("=", 1)[1]
+    raw = href.strip()
+    prefix = "?p=ebook&id="
+    if prefix in raw:
+        raw = raw.split(prefix, 1)[1]
+    elif raw.startswith("p=ebook&id="):
+        raw = raw.split("p=ebook&id=", 1)[1]
 
     raw = raw.strip()
     if not raw:
