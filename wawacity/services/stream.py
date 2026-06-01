@@ -94,7 +94,7 @@ class StreamService:
             logger.error(f"No streams found for ebook '{ebook_id}'")
             return []
 
-        meta = await audiobook_scraper.get_meta(wawacity_url, ebook_id)
+        meta = await audiobook_scraper.get_meta(wawacity_url, ebook_id, config)
         title = meta.get("name") if meta else ebook_id.replace("-", " ")
 
         streams = await self._format_streams(
@@ -277,6 +277,8 @@ class StreamService:
             q_b64config = quote_url_param(config_b64)
 
             playback_url = f"{base_url}/resolve?link={q_link}&b64config={q_b64config}"
+            if category == "audiobook" and episode:
+                playback_url += f"&episode={quote_url_param(str(episode))}"
             stream_name = f"{stream_prefix} {quality}"
 
             description_parts = []
@@ -318,8 +320,11 @@ class StreamService:
         dl_protect_link: str,
         apikey: str,
         config: Optional[Dict] = None,
+        file_index: int = 0,
     ) -> Optional[str]:
-        result = await alldebrid_service.convert_link(dl_protect_link, apikey, config)
+        result = await alldebrid_service.convert_link(
+            dl_protect_link, apikey, config, file_index=file_index
+        )
 
         if result == "LINK_DOWN":
             await mark_dead_link(dl_protect_link, DEAD_LINK_TTL)

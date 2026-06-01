@@ -1,6 +1,6 @@
 import json
 from fastapi import APIRouter, Request, Query, Path
-from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, Response
 from typing import Optional
 
 from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD, MEDIAFLOW_URL, MEDIAFLOW_PASSWORD
@@ -10,6 +10,7 @@ from wawacity.services.stream import stream_service
 from wawacity.services.catalog import catalog_service
 from wawacity.services.mediaflow import mediaflow_service, is_mediaflow_enabled, get_mediaflow_settings
 from wawacity.utils.stremio_extra import parse_catalog_extra
+from wawacity.utils.poster import decode_poster_source
 from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
 from wawacity.scrapers.series import series_scraper
@@ -17,6 +18,14 @@ from wawacity.scrapers.audiobook import audiobook_scraper
 from wawacity.utils.logger import logger
 
 router = APIRouter()
+
+
+def _addon_base_url(request: Request) -> str:
+    forwarded_proto = request.headers.get("x-forwarded-proto")
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if forwarded_proto and forwarded_host:
+        return f"{forwarded_proto}://{forwarded_host}".rstrip("/")
+    return str(request.base_url).rstrip("/")
 
 
 def _render_configure_html(initial_config: Optional[dict] = None) -> str:
@@ -75,6 +84,7 @@ async def get_manifest(
     description="Liste les livres audio disponibles sur Wawacity",
 )
 async def get_catalog(
+    request: Request,
     b64config: str = Path(..., description="Configuration encodée (base64)"),
     content_type: str = Path(..., description="Type Stremio (series pour Livres)"),
     catalog_id: str = Path(..., description="ID du catalogue (wawacity_livres)"),
@@ -87,7 +97,9 @@ async def get_catalog(
     extra = parse_catalog_extra("")
 
     return JSONResponse(
-        content=await catalog_service.get_catalog(config, catalog_id_clean, extra)
+        content=await catalog_service.get_catalog(
+            config, catalog_id_clean, extra, _addon_base_url(request)
+        )
     )
 
 
@@ -97,6 +109,7 @@ async def get_catalog(
     description="Catalogue avec recherche, genre ou pagination",
 )
 async def get_catalog_with_extra(
+    request: Request,
     b64config: str = Path(..., description="Configuration encodée (base64)"),
     content_type: str = Path(..., description="Type Stremio (series pour Livres)"),
     catalog_id: str = Path(..., description="ID du catalogue (wawacity_livres)"),
@@ -110,7 +123,33 @@ async def get_catalog_with_extra(
     extra = parse_catalog_extra(extra_path)
 
     return JSONResponse(
-        content=await catalog_service.get_catalog(config, catalog_id_clean, extra)
+        content=await catalog_service.get_catalog(
+            config, catalog_id_clean, extra, _addon_base_url(request)
+        )
+    )
+
+
+@router.get("/poster/{token}", summary="Proxy affiche", include_in_schema=False)
+async def proxy_poster(token: str = Path(..., description="URL source encodée")):
+    source_url = decode_poster_source(token)
+    if not source_url:
+        return Response(status_code=400)
+
+    from wawacity.utils.http_client import http_client
+
+    try:
+        response = await http_client.get(source_url, timeout=15.0)
+    except Exception:
+        return Response(status_code=502)
+
+    if response.status_code != 200:
+        return Response(status_code=502)
+
+    content_type = response.headers.get("content-type", "image/webp")
+    return Response(
+        content=response.content,
+        media_type=content_type,
+        headers={"Cache-Control": "public, max-age=86400"},
     )
 
 
@@ -121,6 +160,7 @@ async def get_catalog_with_extra(
     description="Fiche détaillée d'un livre audio",
 )
 async def get_meta(
+    request: Request,
     b64config: str = Path(..., description="Configuration encodée (base64)"),
     content_type: str = Path(..., description="Type Stremio"),
     meta_id: str = Path(..., description="ID du contenu (wa:ebook:...)"),
@@ -130,7 +170,9 @@ async def get_meta(
         return JSONResponse(content={"meta": {}})
 
     return JSONResponse(
-        content=await catalog_service.get_meta(config, content_type, meta_id)
+        content=await catalog_service.get_meta(
+            config, content_type, meta_id, _addon_base_url(request)
+        )
     )
 
 # --- Streaming routes ---
@@ -176,7 +218,11 @@ async def get_streams(
            description="Convertit un lien dl-protect en lien direct via AllDebrid pour le streaming")
 async def resolve(
     link: str = Query(..., description="Lien dl-protect à convertir (ex: https://dl-protect.link/abc123)"),
-    b64config: str = Query(..., description="Configuration encodée contenant votre clé API AllDebrid")
+    b64config: str = Query(..., description="Configuration encodée contenant votre clé API AllDebrid"),
+    episode: Optional[int] = Query(
+        None,
+        description="Numéro de chapitre (épisode) pour les archives multi-fichiers",
+    ),
 ):
     config = validate_config(b64config)
     if not config:
@@ -185,8 +231,11 @@ async def resolve(
     apikey = config.get("alldebrid", "")
     if not apikey:
         return FileResponse("wawacity/public/error.mkv")
-    
-    direct_link = await stream_service.resolve_link(link, apikey, config)
+
+    file_index = max(0, episode - 1) if episode and episode > 0 else 0
+    direct_link = await stream_service.resolve_link(
+        link, apikey, config, file_index=file_index
+    )
     
     if direct_link and direct_link != "LINK_DOWN":
         playback_url = mediaflow_service.wrap_playback_url(direct_link, config)

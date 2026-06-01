@@ -51,12 +51,17 @@ def resolve_content_category(content_id: str, content_type: str) -> str:
 
 
 # --- Configuration decoding (lenient, for UI prefill) ---
+def _decode_config_base64(config_base64: str) -> bytes:
+    padded = config_base64 + "=" * (-len(config_base64) % 4)
+    return b64decode(padded, validate=True)
+
+
 def decode_config(config_base64: Optional[str]) -> Optional[Dict]:
     if not config_base64:
         return None
 
     try:
-        decoded_bytes = b64decode(config_base64, validate=True)
+        decoded_bytes = _decode_config_base64(config_base64)
         decoded_str = decoded_bytes.decode("utf-8")
         config_dict = json.loads(decoded_str)
 

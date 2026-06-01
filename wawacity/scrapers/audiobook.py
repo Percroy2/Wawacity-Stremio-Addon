@@ -7,8 +7,10 @@ from selectolax.parser import HTMLParser
 from wawacity.scrapers.base import BaseScraper
 from wawacity.core.config import WAWACITY_URL, CONTENT_CACHE_TTL
 from wawacity.core.categories import AUDIOBOOK_GENRE_SLUGS
+from wawacity.services.alldebrid import alldebrid_service
 from wawacity.utils.http_client import http_client
 from wawacity.utils.helpers import format_url, quote_url_param, extract_filename_from_link
+from wawacity.utils.poster import poster_proxy_url
 from wawacity.utils.audiobook_ids import wawacity_href_to_stremio_id, wawacity_page_path
 from wawacity.utils.cache import get_cache, set_cache
 from wawacity.utils.database import database, SearchLock
@@ -17,7 +19,9 @@ from wawacity.utils.logger import logger
 AUDIOBOOK_SUBCATEGORY = "audiobooks"
 CATALOG_PAGE_SIZE = 20
 CATALOG_FETCH_TIMEOUT = 20.0
-CATALOG_CACHE_VERSION = "v2"
+CATALOG_CACHE_VERSION = "v3"
+META_CACHE_VERSION = "v4"
+CHAPTER_ENRICH_TIMEOUT = 12.0
 
 
 class AudiobookScraper(BaseScraper):
@@ -118,13 +122,25 @@ class AudiobookScraper(BaseScraper):
 
         return metas
 
-    async def get_meta(self, wawacity_url: str, ebook_id: str) -> Optional[Dict]:
+    async def get_meta(
+        self,
+        wawacity_url: str,
+        ebook_id: str,
+        config: Optional[Dict] = None,
+    ) -> Optional[Dict]:
         base_url = wawacity_url.rstrip("/")
         page_path = wawacity_page_path(ebook_id)
         stremio_id = f"wa:ebook:{ebook_id}"
+        cache_key = f"{META_CACHE_VERSION}:{ebook_id}"
 
-        cached = await get_cache(database, "audiobook_meta", ebook_id, None, base_url)
+        cached = await get_cache(database, "audiobook_meta", cache_key, None, base_url)
         if cached is not None and isinstance(cached, dict):
+            if len(cached.get("videos", [])) <= 1:
+                asyncio.create_task(
+                    self._background_enrich_meta(
+                        cache_key, page_path, base_url, config
+                    )
+                )
             return cached
 
         page_url = f"{base_url}/{page_path.lstrip('/')}"
@@ -144,18 +160,129 @@ class AudiobookScraper(BaseScraper):
             return None
 
         meta = self._parse_detail_page(response.text, base_url, stremio_id, ebook_id)
-        if meta:
+        if not meta:
+            return None
+
+        await set_cache(
+            database,
+            "audiobook_meta",
+            cache_key,
+            None,
+            meta,
+            CONTENT_CACHE_TTL,
+            base_url,
+        )
+
+        asyncio.create_task(
+            self._background_enrich_meta(cache_key, page_path, base_url, config)
+        )
+
+        return meta
+
+    async def _background_enrich_meta(
+        self,
+        cache_key: str,
+        page_path: str,
+        base_url: str,
+        config: Optional[Dict],
+    ) -> None:
+        cached = await get_cache(database, "audiobook_meta", cache_key, None, base_url)
+        if not cached or not isinstance(cached, dict):
+            return
+
+        if len(cached.get("videos", [])) > 1:
+            return
+
+        enriched = await self._try_enrich_meta_with_chapters(
+            dict(cached), page_path, base_url, config
+        )
+        if enriched and len(enriched.get("videos", [])) > 1:
             await set_cache(
                 database,
                 "audiobook_meta",
-                ebook_id,
+                cache_key,
                 None,
-                meta,
+                enriched,
                 CONTENT_CACHE_TTL,
                 base_url,
             )
 
-        return meta
+    async def _try_enrich_meta_with_chapters(
+        self,
+        meta: Dict,
+        page_path: str,
+        base_url: str,
+        config: Optional[Dict],
+    ) -> Optional[Dict]:
+        try:
+            await asyncio.wait_for(
+                self._enrich_meta_with_chapters(meta, page_path, base_url, config),
+                timeout=CHAPTER_ENRICH_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.log(
+                "SCRAPER",
+                f"Chapter enrichment timeout for '{meta.get('name', meta.get('id', ''))}'",
+            )
+            return None
+
+        if len(meta.get("videos", [])) > 1:
+            return meta
+        return None
+
+    async def _enrich_meta_with_chapters(
+        self,
+        meta: Dict,
+        page_path: str,
+        base_url: str,
+        config: Optional[Dict],
+    ) -> None:
+        apikey = (config or {}).get("alldebrid", "")
+        if not apikey:
+            return
+
+        dl_protect = await self._get_primary_dl_protect(page_path, base_url)
+        if not dl_protect:
+            return
+
+        try:
+            chapters = await alldebrid_service.list_audio_chapters(
+                dl_protect, apikey, config
+            )
+        except Exception as e:
+            logger.error(f"Chapter discovery failed: {e}")
+            return
+
+        if len(chapters) <= 1:
+            return
+
+        stremio_id = meta.get("id", "")
+        meta["videos"] = [
+            {
+                "id": f"{stremio_id}:1:{chapter['episode']}",
+                "title": chapter["title"],
+                "season": 1,
+                "episode": chapter["episode"],
+            }
+            for chapter in chapters
+        ]
+        logger.log(
+            "SCRAPER",
+            f"Audiobook '{meta.get('name', stremio_id)}': {len(chapters)} chapter(s)",
+        )
+
+    async def _get_primary_dl_protect(
+        self, page_path: str, base_url: str
+    ) -> Optional[str]:
+        results = await self.get_streams_by_page_path(page_path, base_url)
+        if not results:
+            return None
+
+        for result in results:
+            if (result.get("hoster") or "").lower() == "1fichier":
+                return result.get("dl_protect")
+
+        return results[0].get("dl_protect")
 
     def _build_listing_url(
         self,
@@ -174,6 +301,38 @@ class AudiobookScraper(BaseScraper):
             query += f"&page={page}"
 
         return f"{base_url}/{query}"
+
+    def _build_catalog_meta(
+        self,
+        stremio_id: str,
+        name: str,
+        poster: str,
+        description: str,
+        genres: List[str],
+    ) -> Dict:
+        video_id = f"{stremio_id}:1:1"
+        genre_list = genres[:3] if genres else ["Audiobook"]
+
+        return {
+            "id": stremio_id,
+            "type": "series",
+            "name": name,
+            "poster": poster,
+            "background": poster,
+            "posterShape": "square",
+            "description": description,
+            "releaseInfo": genre_list[0],
+            "genres": genre_list,
+            "videos": [
+                {
+                    "id": video_id,
+                    "title": name,
+                    "season": 1,
+                    "episode": 1,
+                    "thumbnail": poster,
+                }
+            ],
+        }
 
     def _parse_listing_page(self, html: str, base_url: str) -> List[Dict]:
         parser = HTMLParser(html)
@@ -212,14 +371,13 @@ class AudiobookScraper(BaseScraper):
                 description = description[:297] + "..."
 
             metas.append(
-                {
-                    "id": stremio_id,
-                    "type": "series",
-                    "name": name,
-                    "poster": poster,
-                    "description": description,
-                    "genres": genres[:3] if genres else ["Audiobook"],
-                }
+                self._build_catalog_meta(
+                    stremio_id,
+                    name,
+                    poster,
+                    description,
+                    genres,
+                )
             )
 
         return metas
@@ -270,6 +428,7 @@ class AudiobookScraper(BaseScraper):
             "type": "series",
             "name": name,
             "poster": poster,
+            "posterShape": "square",
             "description": description,
             "genres": genres[:5] if genres else ["Audiobook"],
             "videos": [

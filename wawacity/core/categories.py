@@ -21,6 +21,9 @@ CATEGORY_DEFINITIONS: Dict[str, Dict[str, str]] = {
 DEFAULT_ENABLED_CATEGORIES: List[str] = list(CATEGORY_DEFINITIONS.keys())
 
 LIVRES_CATALOG_ID = "wawacity_livres"
+LIVRES_SEARCH_CATALOG_ID = "wawacity_livres_search"
+
+LIVRES_CATALOG_IDS = frozenset({LIVRES_CATALOG_ID, LIVRES_SEARCH_CATALOG_ID})
 
 AUDIOBOOK_GENRE_OPTIONS: List[str] = [
     "Roman",
@@ -94,7 +97,6 @@ def build_livres_catalog() -> Dict[str, Any]:
         "id": LIVRES_CATALOG_ID,
         "name": "Livres",
         "extra": [
-            {"name": "search", "isRequired": False},
             {"name": "skip", "isRequired": False},
             {
                 "name": "genre",
@@ -103,6 +105,17 @@ def build_livres_catalog() -> Dict[str, Any]:
             },
         ],
         "genres": AUDIOBOOK_GENRE_OPTIONS,
+    }
+
+
+def build_livres_search_catalog() -> Dict[str, Any]:
+    return {
+        "type": "series",
+        "id": LIVRES_SEARCH_CATALOG_ID,
+        "name": "Livres",
+        "extra": [
+            {"name": "search", "isRequired": True},
+        ],
     }
 
 
@@ -120,7 +133,10 @@ def build_manifest(config: Dict[str, Any], base_manifest: Dict[str, Any]) -> Dic
 
     if "audiobook" in enabled:
         manifest["resources"] = ["catalog", "meta", "stream"]
-        manifest["catalogs"] = [build_livres_catalog()]
+        manifest["catalogs"] = [
+            build_livres_catalog(),
+            build_livres_search_catalog(),
+        ]
     else:
         manifest["resources"] = ["stream"]
         manifest["catalogs"] = []
