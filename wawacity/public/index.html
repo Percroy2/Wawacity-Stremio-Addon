@@ -359,6 +359,54 @@
                 transform: scale(1) translateY(0);
             }
         }
+
+        .checkbox-group {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-sm);
+        }
+
+        .checkbox-item {
+            display: flex;
+            align-items: flex-start;
+            gap: var(--spacing-md);
+            padding: var(--spacing-md);
+            background: var(--color-bg-primary);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-md);
+            cursor: pointer;
+            transition: all var(--transition-fast);
+        }
+
+        .checkbox-item:hover {
+            border-color: var(--color-accent-primary);
+            background: var(--color-surface);
+        }
+
+        .checkbox-item input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            margin-top: 2px;
+            accent-color: var(--color-accent-primary);
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+
+        .checkbox-content {
+            flex: 1;
+        }
+
+        .checkbox-title {
+            font-weight: 600;
+            color: var(--color-text-primary);
+            margin-bottom: 2px;
+        }
+
+        .checkbox-desc {
+            font-size: 13px;
+            color: var(--color-text-muted);
+            line-height: 1.4;
+        }
         
         /* --- Button Components --- */
         .button {
@@ -657,6 +705,45 @@
             <section class="section">
                 <h2 class="section-title">
                     <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z" clip-rule="evenodd" />
+                    </svg>
+                    Catégories exposées
+                </h2>
+
+                <div class="checkbox-group" id="categoryOptions">
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="cat_movie" value="movie" checked>
+                        <div class="checkbox-content">
+                            <div class="checkbox-title">Films</div>
+                            <div class="checkbox-desc">Recherche Wawacity ?p=films — identifiants IMDB (tt…)</div>
+                        </div>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="cat_series" value="series" checked>
+                        <div class="checkbox-content">
+                            <div class="checkbox-title">Séries</div>
+                            <div class="checkbox-desc">Recherche Wawacity ?p=series — identifiants IMDB (tt…:saison:épisode)</div>
+                        </div>
+                    </label>
+                    <label class="checkbox-item">
+                        <input type="checkbox" id="cat_audiobook" value="audiobook" checked>
+                        <div class="checkbox-content">
+                            <div class="checkbox-title">Audiobooks</div>
+                            <div class="checkbox-desc">Recherche Wawacity ?p=ebooks&amp;s=audiobooks — IDs wa:… ou ol:… (Open Library)</div>
+                        </div>
+                    </label>
+                </div>
+                <div class="help-text" style="margin-top: var(--spacing-sm);">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M2.25 12c0-5.385 4.365-9.75 9.75-9.75s9.75 4.365 9.75 9.75-4.365 9.75-9.75 9.75S2.25 17.385 2.25 12zm8.706-1.442c1.146-.573 2.437.463 2.126 1.706l-.709 2.836.042-.02a.75.75 0 01.67 1.34l-.04.022c-1.147.573-2.438-.463-2.127-1.706l.71-2.836-.042.02a.75.75 0 11-.67-1.34l.04-.022zM12 9a.75.75 0 100-1.5.75.75 0 000 1.5z" clip-rule="evenodd" />
+                    </svg>
+                    Seules les catégories cochées apparaîtront dans le manifest Stremio
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
                         <path fill-rule="evenodd" d="M3.792 2.938A49.069 49.069 0 0112 2.25c2.797 0 5.54.236 8.209.688a1.857 1.857 0 011.541 1.836v1.044a3 3 0 01-.879 2.121l-6.182 6.182a1.5 1.5 0 00-.439 1.061v2.927a3 3 0 01-1.658 2.684l-1.757.878A.75.75 0 019.75 21v-5.818a1.5 1.5 0 00-.44-1.06L3.130 7.938a3 3 0 01-.879-2.121V4.774c0-.897.64-1.683 1.542-1.836z" clip-rule="evenodd" />
                     </svg>
                     Filtrage du Contenu
@@ -756,8 +843,26 @@
         // --- Global Variables ---
         const DEFAULT_WAWACITY_URL = "{{DEFAULT_WAWACITY_URL}}";
         const INITIAL_CONFIG = {{INITIAL_CONFIG}};
+        const DEFAULT_CATEGORIES = ["movie", "series", "audiobook"];
         let excludedWords = [];
         let passwordRequired = false;
+
+        function getSelectedCategories() {
+            const categories = [];
+            if (document.getElementById('cat_movie').checked) categories.push('movie');
+            if (document.getElementById('cat_series').checked) categories.push('series');
+            if (document.getElementById('cat_audiobook').checked) categories.push('audiobook');
+            return categories;
+        }
+
+        function setSelectedCategories(categories) {
+            const enabled = Array.isArray(categories) && categories.length > 0
+                ? categories
+                : DEFAULT_CATEGORIES;
+            document.getElementById('cat_movie').checked = enabled.includes('movie');
+            document.getElementById('cat_series').checked = enabled.includes('series');
+            document.getElementById('cat_audiobook').checked = enabled.includes('audiobook');
+        }
 
         function normalizeWawacityUrl(url) {
             return url.trim().replace(/\/+$/, "");
@@ -789,6 +894,15 @@
                     excludedWords = INITIAL_CONFIG.excluded_words;
                     updateTagsDisplay();
                 }
+                if (INITIAL_CONFIG.enabled_categories) {
+                    setSelectedCategories(INITIAL_CONFIG.enabled_categories);
+                }
+            }
+
+            if (!document.getElementById('cat_movie').checked &&
+                !document.getElementById('cat_series').checked &&
+                !document.getElementById('cat_audiobook').checked) {
+                setSelectedCategories(DEFAULT_CATEGORIES);
             }
 
             if (!wawacityInput.value.trim()) {
@@ -860,6 +974,12 @@
                 showNotification('URL Wawacity invalide (http ou https requis)', 'error');
                 return;
             }
+
+            const enabledCategories = getSelectedCategories();
+            if (enabledCategories.length === 0) {
+                showNotification('Sélectionnez au moins une catégorie', 'error');
+                return;
+            }
             
             generateBtn.classList.add('loading');
             generateBtn.innerHTML = `
@@ -892,6 +1012,7 @@
                     alldebrid: alldebrid,
                     tmdb: tmdb,
                     wawacity_url: wawacityUrl,
+                    enabled_categories: enabledCategories,
                     excluded_words: excludedWords
                 };
                 const configBase64 = btoa(JSON.stringify(config));

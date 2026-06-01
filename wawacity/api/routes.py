@@ -4,11 +4,13 @@ from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTML
 from typing import Optional
 
 from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD
+from wawacity.core.categories import build_manifest
 from wawacity.utils.validators import validate_config, decode_config, normalize_wawacity_url
 from wawacity.services.stream import stream_service
 from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
 from wawacity.scrapers.series import series_scraper
+from wawacity.scrapers.audiobook import audiobook_scraper
 from wawacity.utils.logger import logger
 
 router = APIRouter()
@@ -56,7 +58,11 @@ async def configure_addon(
 async def get_manifest(
     b64config: str = Path(..., description="Configuration encodée (base64) avec clés API AllDebrid/TMDB")
 ):
-    return JSONResponse(content=ADDON_MANIFEST)
+    config = validate_config(b64config)
+    if not config:
+        return JSONResponse(content=ADDON_MANIFEST)
+
+    return JSONResponse(content=build_manifest(config, ADDON_MANIFEST))
 
 # --- Streaming routes ---
 @router.get("/{b64config}/stream/{content_type}/{content_id}", 
@@ -127,7 +133,7 @@ async def resolve(
 async def debug_search(
     title: str = Query(..., description="Titre du film ou série à rechercher"),
     year: Optional[str] = Query(None, description="Année de sortie (optionnel)"),
-    type: str = Query("film", description="Type de contenu: 'film' ou 'serie'"),
+    type: str = Query("film", description="Type de contenu: 'film', 'serie' ou 'audiobook'"),
     wawacity_url: Optional[str] = Query(
         None, description="URL Wawacity (sinon valeur WAWACITY_URL du serveur)"
     ),
@@ -135,7 +141,9 @@ async def debug_search(
     try:
         base_url = normalize_wawacity_url(wawacity_url) if wawacity_url else WAWACITY_URL
 
-        if type == "serie":
+        if type == "audiobook":
+            results = await audiobook_scraper.search(title, year, base_url)
+        elif type == "serie":
             results = await series_scraper.search(title, year, base_url)
         else:
             results = await movie_scraper.search(title, year, base_url)
