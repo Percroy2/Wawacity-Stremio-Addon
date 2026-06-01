@@ -3,11 +3,12 @@ from fastapi import APIRouter, Request, Query, Path
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse
 from typing import Optional
 
-from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD
+from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD, MEDIAFLOW_URL, MEDIAFLOW_PASSWORD
 from wawacity.core.categories import build_manifest
 from wawacity.utils.validators import validate_config, decode_config, normalize_wawacity_url
 from wawacity.services.stream import stream_service
 from wawacity.services.catalog import catalog_service
+from wawacity.services.mediaflow import mediaflow_service, is_mediaflow_enabled, get_mediaflow_settings
 from wawacity.utils.stremio_extra import parse_catalog_extra
 from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
@@ -24,6 +25,7 @@ def _render_configure_html(initial_config: Optional[dict] = None) -> str:
 
     html_content = html_content.replace("{{CUSTOM_HTML}}", CUSTOM_HTML)
     html_content = html_content.replace("{{DEFAULT_WAWACITY_URL}}", WAWACITY_URL)
+    html_content = html_content.replace("{{DEFAULT_MEDIAFLOW_URL}}", MEDIAFLOW_URL)
     config_json = json.dumps(initial_config) if initial_config else "null"
     html_content = html_content.replace("{{INITIAL_CONFIG}}", config_json)
 
@@ -184,10 +186,11 @@ async def resolve(
     if not apikey:
         return FileResponse("wawacity/public/error.mkv")
     
-    direct_link = await stream_service.resolve_link(link, apikey)
+    direct_link = await stream_service.resolve_link(link, apikey, config)
     
     if direct_link and direct_link != "LINK_DOWN":
-        return RedirectResponse(url=direct_link, status_code=302)
+        playback_url = mediaflow_service.wrap_playback_url(direct_link, config)
+        return RedirectResponse(url=playback_url or direct_link, status_code=302)
     elif direct_link == "LINK_DOWN":
         return FileResponse("wawacity/public/link_down_error.mkv")
     else:
@@ -352,6 +355,41 @@ async def health_check(
         health_status["checks"]["proxy"] = {
             "status": "disabled",
             "message": "No proxy configured"
+        }
+
+    # --- MediaFlow test ---
+    public_url, internal_url, mf_password = get_mediaflow_settings({})
+    if public_url and mf_password:
+        mf_start = time.time()
+        try:
+            ip = await mediaflow_service.get_public_ip(internal_url, mf_password)
+            mf_time = round((time.time() - mf_start) * 1000)
+            if ip:
+                health_status["checks"]["mediaflow"] = {
+                    "status": "ok",
+                    "message": f"MediaFlow reachable (IP: {ip})",
+                    "response_time_ms": mf_time,
+                    "public_url": public_url,
+                }
+            else:
+                health_status["checks"]["mediaflow"] = {
+                    "status": "error",
+                    "message": "MediaFlow unreachable or invalid password",
+                    "response_time_ms": mf_time,
+                }
+                health_status["status"] = "degraded"
+        except Exception as e:
+            mf_time = round((time.time() - mf_start) * 1000)
+            health_status["checks"]["mediaflow"] = {
+                "status": "error",
+                "message": f"MediaFlow error: {str(e)}",
+                "response_time_ms": mf_time,
+            }
+            health_status["status"] = "degraded"
+    else:
+        health_status["checks"]["mediaflow"] = {
+            "status": "disabled",
+            "message": "MediaFlow not configured",
         }
     
     # --- Final response ---

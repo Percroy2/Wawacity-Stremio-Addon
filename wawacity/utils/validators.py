@@ -101,6 +101,23 @@ def validate_config(config_base64: Optional[str]) -> Optional[Dict[str, str]]:
         config_dict.get("enabled_categories")
     )
 
+    if config_dict.get("mediaflow_url") or config_dict.get("mediaflow_password"):
+        mf_url = (config_dict.get("mediaflow_url") or "").strip()
+        mf_password = (config_dict.get("mediaflow_password") or "").strip()
+
+        if not mf_url or not mf_password:
+            return None
+
+        normalized_mf = normalize_wawacity_url(mf_url)
+        if not normalized_mf:
+            return None
+
+        config_dict["mediaflow_url"] = normalized_mf
+        config_dict["mediaflow_password"] = mf_password
+    else:
+        config_dict.pop("mediaflow_url", None)
+        config_dict.pop("mediaflow_password", None)
+
     return config_dict
 
 

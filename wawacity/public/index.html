@@ -705,6 +705,44 @@
             <section class="section">
                 <h2 class="section-title">
                     <svg viewBox="0 0 24 24" fill="currentColor">
+                        <path fill-rule="evenodd" d="M12.97 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963zM12 9a3.75 3.75 0 100 7.5A3.75 3.75 0 0012 9zm-8.25 3.75a8.25 8.25 0 1116.5 0 8.25 8.25 0 01-16.5 0z" clip-rule="evenodd" />
+                    </svg>
+                    MediaFlow Proxy (optionnel)
+                </h2>
+
+                <div class="form-group">
+                    <label class="form-label" for="mediaflow_url">URL MediaFlow</label>
+                    <div class="input-group">
+                        <input type="url" id="mediaflow_url" class="input" placeholder="{{DEFAULT_MEDIAFLOW_URL}}" autocomplete="off">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M12.97 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963zM12 9a3.75 3.75 0 100 7.5A3.75 3.75 0 0012 9zm-8.25 3.75a8.25 8.25 0 1116.5 0 8.25 8.25 0 01-16.5 0z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="help-text">
+                        URL publique de votre instance MediaFlow (sur un autre serveur ou hébergée).
+                        Utilisée pour AllDebrid et la lecture dans Stremio.
+                        <a href="https://github.com/mhdzumair/mediaflow-proxy" target="_blank">Documentation</a>
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label" for="mediaflow_password">Mot de passe MediaFlow</label>
+                    <div class="input-group">
+                        <input type="password" id="mediaflow_password" class="input" placeholder="API_PASSWORD de votre MediaFlow" autocomplete="off">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M12 1.5a5.25 5.25 0 00-5.25 5.25v3a3 3 0 00-3 3v6.75a3 3 0 003 3h10.5a3 3 0 003-3v-6.75a3 3 0 00-3-3v-3c0-2.9-2.35-5.25-5.25-5.25zm3.75 8.25v-3a3.75 3.75 0 10-7.5 0v3h7.5z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="help-text">
+                        Correspond à la variable <code>API_PASSWORD</code> de votre conteneur MediaFlow.
+                        Les deux champs sont requis ensemble ; laissez vide pour désactiver le proxy.
+                    </div>
+                </div>
+            </section>
+
+            <section class="section">
+                <h2 class="section-title">
+                    <svg viewBox="0 0 24 24" fill="currentColor">
                         <path fill-rule="evenodd" d="M3 6a3 3 0 013-3h2.25a3 3 0 013 3v2.25a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm9.75 0a3 3 0 013-3H18a3 3 0 013 3v2.25a3 3 0 01-3 3h-2.25a3 3 0 01-3-3V6zM3 15.75a3 3 0 013-3h2.25a3 3 0 013 3V18a3 3 0 01-3 3H6a3 3 0 01-3-3v-2.25zm9.75 0a3 3 0 013-3H18a3 3 0 013 3V18a3 3 0 01-3 3h-2.25a3 3 0 01-3-3v-2.25z" clip-rule="evenodd" />
                     </svg>
                     Catégories exposées
@@ -897,6 +935,12 @@
                 if (INITIAL_CONFIG.enabled_categories) {
                     setSelectedCategories(INITIAL_CONFIG.enabled_categories);
                 }
+                if (INITIAL_CONFIG.mediaflow_url) {
+                    document.getElementById("mediaflow_url").value = INITIAL_CONFIG.mediaflow_url;
+                }
+                if (INITIAL_CONFIG.mediaflow_password) {
+                    document.getElementById("mediaflow_password").value = INITIAL_CONFIG.mediaflow_password;
+                }
             }
 
             if (!document.getElementById('cat_movie').checked &&
@@ -1015,6 +1059,25 @@
                     enabled_categories: enabledCategories,
                     excluded_words: excludedWords
                 };
+
+                const mediaflowUrl = normalizeWawacityUrl(document.getElementById('mediaflow_url').value);
+                const mediaflowPassword = document.getElementById('mediaflow_password').value.trim();
+                if (mediaflowUrl || mediaflowPassword) {
+                    if (!mediaflowUrl) {
+                        showNotification('URL MediaFlow requise avec le mot de passe', 'error');
+                        return;
+                    }
+                    if (!isValidWawacityUrl(mediaflowUrl)) {
+                        showNotification('URL MediaFlow invalide (http ou https requis)', 'error');
+                        return;
+                    }
+                    if (!mediaflowPassword) {
+                        showNotification('Mot de passe MediaFlow requis avec l\'URL', 'error');
+                        return;
+                    }
+                    config.mediaflow_url = mediaflowUrl;
+                    config.mediaflow_password = mediaflowPassword;
+                }
                 const configBase64 = btoa(JSON.stringify(config));
                 const addonUrl = `${window.location.protocol}//${window.location.host}/${configBase64}/manifest.json`;
                 

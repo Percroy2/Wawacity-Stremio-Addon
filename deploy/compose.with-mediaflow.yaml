@@ -1,0 +1,62 @@
+# Exemple Dockge / Docker Compose : Wawacity + MediaFlow Proxy
+# Copier vers votre stack (ex. /opt/docker/dockge-enhanced/stacks/wawacity/compose.yaml)
+
+services:
+  mediaflow-proxy:
+    image: mhdzumair/mediaflow-proxy:latest
+    container_name: mediaflow-proxy
+    restart: unless-stopped
+    environment:
+      PORT: "8888"
+      API_PASSWORD: ${MEDIAFLOW_PASSWORD}
+      # Optionnel : proxy sortant (WireGuard, SOCKS5…) si AllDebrid bloque l'IP du serveur (NO_SERVER)
+      PROXY_URL: ${MEDIAFLOW_PROXY_URL:-}
+    networks:
+      - wawacity
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/docs')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  wawacity:
+    build: ./src
+    container_name: wawacity-addon
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MEDIAFLOW_INTERNAL_URL: http://mediaflow-proxy:8888
+    volumes:
+      - ./data:/app/data
+    networks:
+      - wawacity
+    depends_on:
+      - mediaflow-proxy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 20s
+
+networks:
+  wawacity:
+    name: wawacity
+
+# Reverse proxy (Traefik/Nginx) recommandé pour exposer MediaFlow en HTTPS, ex. :
+#   https://mediaflow.hyperion-western.fr -> mediaflow-proxy:8888
+# Définir MEDIAFLOW_URL=https://mediaflow.hyperion-western.fr dans .env

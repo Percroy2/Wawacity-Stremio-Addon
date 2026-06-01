@@ -313,8 +313,13 @@ class StreamService:
         logger.log("STREAM", f"Returning {len(streams)} stream(s)")
         return streams
 
-    async def resolve_link(self, dl_protect_link: str, apikey: str) -> Optional[str]:
-        result = await alldebrid_service.convert_link(dl_protect_link, apikey)
+    async def resolve_link(
+        self,
+        dl_protect_link: str,
+        apikey: str,
+        config: Optional[Dict] = None,
+    ) -> Optional[str]:
+        result = await alldebrid_service.convert_link(dl_protect_link, apikey, config)
 
         if result == "LINK_DOWN":
             await mark_dead_link(dl_protect_link, DEAD_LINK_TTL)

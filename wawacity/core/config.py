@@ -46,6 +46,13 @@ ADDON_PASSWORD = environ.get("ADDON_PASSWORD", "")
 # --- Proxy configuration ---
 PROXY_URL = environ.get("PROXY_URL")
 
+# --- MediaFlow Proxy configuration ---
+# Public URL used in playback links returned to Stremio (must be reachable by clients).
+MEDIAFLOW_URL = environ.get("MEDIAFLOW_URL", "").rstrip("/")
+# Optional internal URL for API forwarding (Docker network, e.g. http://mediaflow-proxy:8888).
+MEDIAFLOW_INTERNAL_URL = environ.get("MEDIAFLOW_INTERNAL_URL", "").rstrip("/")
+MEDIAFLOW_PASSWORD = environ.get("MEDIAFLOW_PASSWORD", "")
+
 # --- Internal configuration ---
 CLEANUP_INTERVAL = 60  # 60 seconds cleanup cycle
 
@@ -53,7 +60,7 @@ CLEANUP_INTERVAL = 60  # 60 seconds cleanup cycle
 ADDON_MANIFEST = {
     "id": ADDON_ID,
     "name": ADDON_NAME,
-    "version": "2.1.0",
+    "version": "2.2.0",
     "description": "Accès au contenu de Wawacity via Stremio & AllDebrid (non officiel)",
     "catalogs": [],
     "resources": ["stream"],

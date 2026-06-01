@@ -1,25 +1,51 @@
-from typing import Optional
+from typing import Optional, Dict
+from urllib.parse import urlencode
 from asyncio import sleep
+
+from wawacity.services.mediaflow import get_mediaflow_settings, mediaflow_service
 from wawacity.utils.http_client import http_client
 from wawacity.core.config import ALLDEBRID_API_URL, ALLDEBRID_MAX_RETRIES, RETRY_DELAY_SECONDS
 from wawacity.utils.logger import logger
 
 class AllDebridService:
-    
+
+    async def _api_get(
+        self,
+        path: str,
+        params: Dict[str, str],
+        config: Optional[Dict] = None,
+    ):
+        query = urlencode(params)
+        destination = f"{ALLDEBRID_API_URL}{path}?{query}"
+
+        _, internal_url, password = get_mediaflow_settings(config)
+        if internal_url and password:
+            logger.log("ALLDEBRID", "Routing API call via MediaFlow forward proxy")
+            return await mediaflow_service.forward_get(internal_url, password, destination)
+
+        return await http_client.get(f"{ALLDEBRID_API_URL}{path}", params=params)
+
     # --- Link conversion ---
-    async def convert_link(self, dl_protect_link: str, apikey: str) -> Optional[str]:
+    async def convert_link(
+        self,
+        dl_protect_link: str,
+        apikey: str,
+        config: Optional[Dict] = None,
+    ) -> Optional[str]:
         if not apikey:
             logger.error("No AllDebrid API key provided")
             return None
-        
+
         logger.log("ALLDEBRID", f"Converting: {dl_protect_link}")
-        
+
+        base_params = {"agent": "Wawacity", "apikey": apikey}
+
         for attempt in range(ALLDEBRID_MAX_RETRIES):
             try:
-                # --- Step 1: Resolve redirector ---
-                response1 = await http_client.get(
-                    f"{ALLDEBRID_API_URL}/link/redirector",
-                    params={"agent": "Wawacity", "apikey": apikey, "link": dl_protect_link}
+                response1 = await self._api_get(
+                    "/link/redirector",
+                    {**base_params, "link": dl_protect_link},
+                    config,
                 )
                 
                 if response1.status_code != 200:
@@ -52,9 +78,10 @@ class AllDebridService:
                 
                 # --- Step 2: Unlock first link ---
                 first_link = redirected_links[0]
-                response2 = await http_client.get(
-                    f"{ALLDEBRID_API_URL}/link/unlock",
-                    params={"agent": "Wawacity", "apikey": apikey, "link": first_link}
+                response2 = await self._api_get(
+                    "/link/unlock",
+                    {**base_params, "link": first_link},
+                    config,
                 )
                 
                 if response2.status_code != 200:
