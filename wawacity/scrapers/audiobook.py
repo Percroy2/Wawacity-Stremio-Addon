@@ -20,8 +20,8 @@ AUDIOBOOK_SUBCATEGORY = "audiobooks"
 CATALOG_PAGE_SIZE = 20
 CATALOG_FETCH_TIMEOUT = 20.0
 CATALOG_CACHE_VERSION = "v3"
-META_CACHE_VERSION = "v4"
-CHAPTER_ENRICH_TIMEOUT = 12.0
+META_CACHE_VERSION = "v5"
+CHAPTER_ENRICH_TIMEOUT = 30.0
 
 
 class AudiobookScraper(BaseScraper):
@@ -135,12 +135,13 @@ class AudiobookScraper(BaseScraper):
 
         cached = await get_cache(database, "audiobook_meta", cache_key, None, base_url)
         if cached is not None and isinstance(cached, dict):
-            if len(cached.get("videos", [])) <= 1:
-                asyncio.create_task(
-                    self._background_enrich_meta(
-                        cache_key, page_path, base_url, config
-                    )
+            if len(cached.get("videos", [])) > 1:
+                return cached
+            asyncio.create_task(
+                self._background_enrich_meta(
+                    cache_key, page_path, base_url, config
                 )
+            )
             return cached
 
         page_url = f"{base_url}/{page_path.lstrip('/')}"
@@ -173,9 +174,20 @@ class AudiobookScraper(BaseScraper):
             base_url,
         )
 
-        asyncio.create_task(
-            self._background_enrich_meta(cache_key, page_path, base_url, config)
+        enriched = await self._try_enrich_meta_with_chapters(
+            meta, page_path, base_url, config
         )
+        if enriched:
+            await set_cache(
+                database,
+                "audiobook_meta",
+                cache_key,
+                None,
+                enriched,
+                CONTENT_CACHE_TTL,
+                base_url,
+            )
+            return enriched
 
         return meta
 

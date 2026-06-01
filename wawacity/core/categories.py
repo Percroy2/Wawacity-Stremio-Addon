@@ -97,6 +97,7 @@ def build_livres_catalog() -> Dict[str, Any]:
         "id": LIVRES_CATALOG_ID,
         "name": "Livres",
         "extra": [
+            {"name": "search", "isRequired": False},
             {"name": "skip", "isRequired": False},
             {
                 "name": "genre",

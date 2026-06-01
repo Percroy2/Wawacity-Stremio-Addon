@@ -321,9 +321,14 @@ class StreamService:
         apikey: str,
         config: Optional[Dict] = None,
         file_index: int = 0,
+        serve_base_url: Optional[str] = None,
     ) -> Optional[str]:
         result = await alldebrid_service.convert_link(
-            dl_protect_link, apikey, config, file_index=file_index
+            dl_protect_link,
+            apikey,
+            config,
+            file_index=file_index,
+            serve_base_url=serve_base_url,
         )
 
         if result == "LINK_DOWN":

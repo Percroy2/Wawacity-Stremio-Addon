@@ -7,3 +7,4 @@ aiosqlite==0.20.0
 asyncpg==0.30.0
 python-dotenv==1.0.0
 loguru==0.7.2
+rarfile==4.2

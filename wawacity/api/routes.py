@@ -1,4 +1,6 @@
 import json
+import os
+import re
 from fastapi import APIRouter, Request, Query, Path
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, Response
 from typing import Optional
@@ -212,11 +214,30 @@ async def get_streams(
         logger.error(f"Stream request failed: {e}")
         return JSONResponse(content={"streams": []})
 
+@router.get("/cached-audio/{cache_id}", summary="Chapitre audio extrait", include_in_schema=False)
+async def serve_cached_audio(cache_id: str = Path(...)):
+    from wawacity.services.alldebrid import AUDIO_CACHE_DIR
+
+    if not re.fullmatch(r"[a-f0-9]{32}", cache_id):
+        return Response(status_code=404)
+
+    cache_path = os.path.join(AUDIO_CACHE_DIR, f"{cache_id}.mp3")
+    if not os.path.isfile(cache_path):
+        return Response(status_code=404)
+
+    return FileResponse(
+        cache_path,
+        media_type="audio/mpeg",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 # --- AllDebrid resolution route ---
 @router.get("/resolve", 
            summary="Résoudre un lien", 
            description="Convertit un lien dl-protect en lien direct via AllDebrid pour le streaming")
 async def resolve(
+    request: Request,
     link: str = Query(..., description="Lien dl-protect à convertir (ex: https://dl-protect.link/abc123)"),
     b64config: str = Query(..., description="Configuration encodée contenant votre clé API AllDebrid"),
     episode: Optional[int] = Query(
@@ -234,7 +255,11 @@ async def resolve(
 
     file_index = max(0, episode - 1) if episode and episode > 0 else 0
     direct_link = await stream_service.resolve_link(
-        link, apikey, config, file_index=file_index
+        link,
+        apikey,
+        config,
+        file_index=file_index,
+        serve_base_url=_addon_base_url(request),
     )
     
     if direct_link and direct_link != "LINK_DOWN":
