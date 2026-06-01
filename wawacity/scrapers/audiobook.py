@@ -4,12 +4,17 @@ from re import findall
 from selectolax.parser import HTMLParser
 
 from wawacity.scrapers.base import BaseScraper
-from wawacity.core.config import WAWACITY_URL
+from wawacity.core.config import WAWACITY_URL, CONTENT_CACHE_TTL
+from wawacity.core.categories import AUDIOBOOK_GENRE_SLUGS
 from wawacity.utils.http_client import http_client
 from wawacity.utils.helpers import format_url, quote_url_param, extract_filename_from_link
+from wawacity.utils.audiobook_ids import wawacity_href_to_stremio_id, wawacity_page_path
+from wawacity.utils.cache import get_cache, set_cache
+from wawacity.utils.database import database, SearchLock
 from wawacity.utils.logger import logger
 
 AUDIOBOOK_SUBCATEGORY = "audiobooks"
+CATALOG_PAGE_SIZE = 20
 
 
 class AudiobookScraper(BaseScraper):
@@ -30,6 +35,214 @@ class AudiobookScraper(BaseScraper):
         except Exception as e:
             logger.error(f"Audiobook search failed for '{title}': {e}")
             return []
+
+    async def get_streams_by_page_path(
+        self, page_path: str, wawacity_url: Optional[str] = None
+    ) -> List[Dict]:
+        base_url = (wawacity_url or WAWACITY_URL).rstrip("/")
+        page_path = page_path.lstrip("/")
+
+        async with SearchLock("audiobook_page", page_path, None):
+            cached = await get_cache(database, "audiobook_page", page_path, None, base_url)
+            if cached is not None:
+                return cached
+
+            search_result = {"link": page_path, "text": ""}
+            results = await self._extract_links(search_result, base_url)
+
+            if results:
+                await set_cache(
+                    database,
+                    "audiobook_page",
+                    page_path,
+                    None,
+                    results,
+                    CONTENT_CACHE_TTL,
+                    base_url,
+                )
+
+            return results
+
+    async def list_catalog(
+        self,
+        wawacity_url: str,
+        search: Optional[str] = None,
+        genre: Optional[str] = None,
+        skip: int = 0,
+    ) -> List[Dict]:
+        base_url = wawacity_url.rstrip("/")
+        page = skip // CATALOG_PAGE_SIZE + 1
+        genre_slug = AUDIOBOOK_GENRE_SLUGS.get(genre, genre) if genre else None
+        cache_label = f"{search or ''}:{genre_slug or ''}:{page}"
+
+        async with SearchLock("audiobook_catalog", cache_label, None):
+            cached = await get_cache(
+                database, "audiobook_catalog", cache_label, None, base_url
+            )
+            if cached is not None:
+                return cached
+
+            listing_url = self._build_listing_url(base_url, search, genre_slug, page)
+            logger.log("SCRAPER", f"Fetching audiobook catalog: {listing_url}")
+
+            response = await http_client.get(listing_url)
+            if response.status_code != 200:
+                logger.error(f"Audiobook catalog failed: {response.status_code}")
+                return []
+
+            metas = self._parse_listing_page(response.text, base_url)
+
+            if metas:
+                await set_cache(
+                    database,
+                    "audiobook_catalog",
+                    cache_label,
+                    None,
+                    metas,
+                    CONTENT_CACHE_TTL,
+                    base_url,
+                )
+
+            return metas
+
+    async def get_meta(self, wawacity_url: str, ebook_id: str) -> Optional[Dict]:
+        base_url = wawacity_url.rstrip("/")
+        page_path = wawacity_page_path(ebook_id)
+        stremio_id = f"wa:ebook:{ebook_id}"
+
+        async with SearchLock("audiobook_meta", ebook_id, None):
+            cached = await get_cache(database, "audiobook_meta", ebook_id, None, base_url)
+            if cached is not None and isinstance(cached, dict):
+                return cached
+
+            page_url = f"{base_url}/{page_path.lstrip('/')}"
+            response = await http_client.get(page_url)
+            if response.status_code != 200:
+                return None
+
+            meta = self._parse_detail_page(response.text, base_url, stremio_id, ebook_id)
+            if meta:
+                await set_cache(
+                    database,
+                    "audiobook_meta",
+                    ebook_id,
+                    None,
+                    meta,
+                    CONTENT_CACHE_TTL,
+                    base_url,
+                )
+
+            return meta
+
+    def _build_listing_url(
+        self,
+        base_url: str,
+        search: Optional[str],
+        genre_slug: Optional[str],
+        page: int,
+    ) -> str:
+        query = f"?p=ebooks&s={AUDIOBOOK_SUBCATEGORY}"
+
+        if search:
+            query += f"&search={quote_url_param(str(search)[:31])}"
+        if genre_slug:
+            query += f"&genre={quote_url_param(genre_slug)}"
+        if page > 1:
+            query += f"&page={page}"
+
+        return f"{base_url}/{query}"
+
+    def _parse_listing_page(self, html: str, base_url: str) -> List[Dict]:
+        parser = HTMLParser(html)
+        seen = set()
+        metas: List[Dict] = []
+
+        for block in parser.css("div.wa-sub-block.wa-post-detail-item"):
+            title_link = block.css_first(
+                'div.wa-sub-block-title a[href^="?p=ebook&id="]'
+            )
+            if not title_link:
+                continue
+
+            href = title_link.attributes.get("href", "")
+            stremio_id = wawacity_href_to_stremio_id(href)
+            if not stremio_id or stremio_id in seen:
+                continue
+
+            seen.add(stremio_id)
+            name = title_link.text(strip=True) or "Livre audio"
+
+            img = block.css_first("img.img-responsive")
+            poster = ""
+            if img:
+                poster = format_url(img.attributes.get("src", ""), base_url)
+
+            genres = []
+            for genre_link in block.css('a[href*="genre="]'):
+                label = genre_link.text(strip=True)
+                if label and label not in genres:
+                    genres.append(label)
+
+            desc_node = block.css_first("p")
+            description = desc_node.text(strip=True) if desc_node else ""
+            if len(description) > 300:
+                description = description[:297] + "..."
+
+            metas.append(
+                {
+                    "id": stremio_id,
+                    "type": "series",
+                    "name": name,
+                    "poster": poster,
+                    "description": description,
+                    "genres": genres[:3] if genres else ["Audiobook"],
+                }
+            )
+
+        return metas
+
+    def _parse_detail_page(
+        self, html: str, base_url: str, stremio_id: str, ebook_id: str
+    ) -> Optional[Dict]:
+        parser = HTMLParser(html)
+        title_node = parser.css_first("div.wa-sub-block-title a")
+        if not title_node:
+            return None
+
+        name = title_node.text(strip=True) or "Livre audio"
+
+        img = parser.css_first("img.img-responsive")
+        poster = ""
+        if img:
+            poster = format_url(img.attributes.get("src", ""), base_url)
+
+        genres = []
+        for genre_link in parser.css('a[href*="genre="]'):
+            label = genre_link.text(strip=True)
+            if label and label not in genres:
+                genres.append(label)
+
+        desc_node = parser.css_first("div.wa-sub-block.wa-post-detail-item p")
+        description = desc_node.text(strip=True) if desc_node else ""
+
+        video_id = f"{stremio_id}:1:1"
+
+        return {
+            "id": stremio_id,
+            "type": "series",
+            "name": name,
+            "poster": poster,
+            "description": description,
+            "genres": genres[:5] if genres else ["Audiobook"],
+            "videos": [
+                {
+                    "id": video_id,
+                    "title": "Livre audio",
+                    "season": 1,
+                    "episode": 1,
+                }
+            ],
+        }
 
     async def _search_audiobook(self, title: str, base_url: str) -> Optional[Dict]:
         encoded_title = quote_url_param(str(title)[:31])
@@ -88,7 +301,7 @@ class AudiobookScraper(BaseScraper):
             if items and items[0].strip():
                 quality_txt = items[0].strip()
 
-        page_url = f"{base_url}/{page_path}"
+        page_url = f"{base_url}/{page_path.lstrip('/')}"
 
         try:
             response = await http_client.get(page_url)
@@ -96,6 +309,11 @@ class AudiobookScraper(BaseScraper):
                 return results
 
             parser = HTMLParser(response.text)
+            if not page_title:
+                title_node = parser.css_first("div.wa-sub-block-title a")
+                if title_node:
+                    page_title = title_node.text(strip=True) or "Livre audio"
+
             link_rows = parser.css("#DDLLinks tr.link-row:nth-child(n+2)")
 
             if not link_rows:

@@ -7,6 +7,8 @@ from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM
 from wawacity.core.categories import build_manifest
 from wawacity.utils.validators import validate_config, decode_config, normalize_wawacity_url
 from wawacity.services.stream import stream_service
+from wawacity.services.catalog import catalog_service
+from wawacity.utils.stremio_extra import parse_catalog_extra
 from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
 from wawacity.scrapers.series import series_scraper
@@ -63,6 +65,71 @@ async def get_manifest(
         return JSONResponse(content=ADDON_MANIFEST)
 
     return JSONResponse(content=build_manifest(config, ADDON_MANIFEST))
+
+# --- Catalog routes ---
+@router.get(
+    "/{b64config}/catalog/{content_type}/{catalog_id}",
+    summary="Catalogue Stremio",
+    description="Liste les livres audio disponibles sur Wawacity",
+)
+async def get_catalog(
+    b64config: str = Path(..., description="Configuration encodée (base64)"),
+    content_type: str = Path(..., description="Type Stremio (series pour Livres)"),
+    catalog_id: str = Path(..., description="ID du catalogue (wawacity_livres)"),
+):
+    config = validate_config(b64config)
+    if not config:
+        return JSONResponse(content={"metas": []})
+
+    catalog_id_clean = catalog_id.replace(".json", "")
+    extra = parse_catalog_extra("")
+
+    return JSONResponse(
+        content=await catalog_service.get_catalog(config, catalog_id_clean, extra)
+    )
+
+
+@router.get(
+    "/{b64config}/catalog/{content_type}/{catalog_id}/{extra_path:path}",
+    summary="Catalogue Stremio (filtres)",
+    description="Catalogue avec recherche, genre ou pagination",
+)
+async def get_catalog_with_extra(
+    b64config: str = Path(..., description="Configuration encodée (base64)"),
+    content_type: str = Path(..., description="Type Stremio (series pour Livres)"),
+    catalog_id: str = Path(..., description="ID du catalogue (wawacity_livres)"),
+    extra_path: str = Path(..., description="Paramètres extra Stremio (search, genre, skip)"),
+):
+    config = validate_config(b64config)
+    if not config:
+        return JSONResponse(content={"metas": []})
+
+    catalog_id_clean = catalog_id.replace(".json", "")
+    extra = parse_catalog_extra(extra_path)
+
+    return JSONResponse(
+        content=await catalog_service.get_catalog(config, catalog_id_clean, extra)
+    )
+
+
+# --- Meta routes ---
+@router.get(
+    "/{b64config}/meta/{content_type}/{meta_id}",
+    summary="Métadonnées Stremio",
+    description="Fiche détaillée d'un livre audio",
+)
+async def get_meta(
+    b64config: str = Path(..., description="Configuration encodée (base64)"),
+    content_type: str = Path(..., description="Type Stremio"),
+    meta_id: str = Path(..., description="ID du contenu (wa:ebook:...)"),
+):
+    config = validate_config(b64config)
+    if not config:
+        return JSONResponse(content={"meta": {}})
+
+    return JSONResponse(
+        content=await catalog_service.get_meta(config, content_type, meta_id)
+    )
 
 # --- Streaming routes ---
 @router.get("/{b64config}/stream/{content_type}/{content_id}", 

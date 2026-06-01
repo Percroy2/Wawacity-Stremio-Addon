@@ -11,6 +11,7 @@ from wawacity.utils.database import SearchLock, is_dead_link, mark_dead_link, da
 from wawacity.utils.cache import get_cache, set_cache
 from wawacity.utils.validators import extract_media_info
 from wawacity.utils.helpers import encode_config_to_base64, quote_url_param, get_wawacity_url
+from wawacity.utils.audiobook_ids import wawacity_page_path
 from wawacity.utils.logger import logger
 from wawacity.core.config import CONTENT_CACHE_TTL, DEAD_LINK_TTL
 
@@ -29,6 +30,9 @@ class StreamService:
         if not is_category_enabled(config, category):
             logger.log("STREAM", f"Category '{category}' disabled in configuration")
             return []
+
+        if media_info.get("ebook_id"):
+            return await self._get_ebook_streams(media_info, config, base_url)
 
         metadata = await self._get_metadata(media_info, config.get("tmdb", ""))
         if not metadata:
@@ -70,6 +74,44 @@ class StreamService:
                 logger.log("STREAM", f"Excluded {excluded_count} streams by filter")
             return filtered_streams
 
+        return streams
+
+    async def _get_ebook_streams(
+        self,
+        media_info: Dict,
+        config: Dict,
+        base_url: str,
+    ) -> List[Dict]:
+        wawacity_url = get_wawacity_url(config)
+        ebook_id = media_info.get("ebook_id")
+        if not ebook_id:
+            return []
+
+        page_path = wawacity_page_path(ebook_id)
+        results = await audiobook_scraper.get_streams_by_page_path(page_path, wawacity_url)
+
+        if not results:
+            logger.error(f"No streams found for ebook '{ebook_id}'")
+            return []
+
+        meta = await audiobook_scraper.get_meta(wawacity_url, ebook_id)
+        title = meta.get("name") if meta else ebook_id.replace("-", " ")
+
+        streams = await self._format_streams(
+            results,
+            config,
+            base_url,
+            media_info.get("season"),
+            media_info.get("episode"),
+            None,
+            "audiobook",
+        )
+
+        excluded_words = config.get("excluded_words", [])
+        if excluded_words:
+            return self._filter_excluded_words(streams, excluded_words)
+
+        logger.log("STREAM", f"Returning {len(streams)} ebook stream(s) for '{title}'")
         return streams
 
     async def _get_metadata(self, media_info: Dict, tmdb_key: str) -> Optional[Dict]:

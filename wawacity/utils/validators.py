@@ -4,7 +4,7 @@ from typing import Optional, Dict
 from base64 import b64decode, urlsafe_b64decode
 from urllib.parse import urlparse, unquote
 
-from wawacity.core.categories import normalize_enabled_categories
+from wawacity.utils.audiobook_ids import parse_audiobook_content_id
 
 # --- Wawacity URL normalization ---
 def normalize_wawacity_url(url: Optional[str]) -> Optional[str]:
@@ -21,7 +21,7 @@ def normalize_wawacity_url(url: Optional[str]) -> Optional[str]:
 
 
 def decode_wa_title(content_id: str) -> Optional[str]:
-    if not content_id.startswith("wa:"):
+    if not content_id.startswith("wa:") or content_id.startswith("wa:ebook:"):
         return None
 
     encoded = content_id[3:]
@@ -34,6 +34,9 @@ def decode_wa_title(content_id: str) -> Optional[str]:
 
 def resolve_content_category(content_id: str, content_type: str) -> str:
     content_id_formatted = content_id.replace(".json", "")
+
+    if content_id_formatted.startswith("wa:ebook:"):
+        return "audiobook"
 
     if content_id_formatted.startswith(("wa:", "ol:")) or (
         content_id_formatted.startswith("OL") and content_id_formatted.endswith("W")
@@ -106,6 +109,18 @@ def extract_media_info(content_id: str, content_type: str) -> Dict[str, Optional
     category = resolve_content_category(content_id_formatted, content_type)
 
     if category == "audiobook":
+        if content_id_formatted.startswith("wa:ebook:"):
+            ebook_id, season, episode = parse_audiobook_content_id(content_id_formatted)
+            return {
+                "category": "audiobook",
+                "content_id": content_id_formatted,
+                "ebook_id": ebook_id,
+                "season": season,
+                "episode": episode,
+                "search_title": None,
+                "imdb_id": None,
+            }
+
         if content_id_formatted.startswith("wa:"):
             return {
                 "category": "audiobook",
