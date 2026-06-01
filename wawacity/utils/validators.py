@@ -4,6 +4,7 @@ from typing import Optional, Dict
 from base64 import b64decode, urlsafe_b64decode
 from urllib.parse import urlparse, unquote
 
+from wawacity.core.categories import normalize_enabled_categories
 from wawacity.utils.audiobook_ids import parse_audiobook_content_id
 
 # --- Wawacity URL normalization ---
