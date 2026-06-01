@@ -2,10 +2,12 @@ import io
 import os
 import re
 import zipfile
-from typing import List
+from typing import List, Optional, Tuple
 
 import httpx
 import rarfile
+
+from wawacity.utils.audio_tags import TAG_HEADER_BYTES, read_title_from_audio_bytes
 
 rarfile.UNRAR_TOOL = "unrar-free"
 
@@ -90,39 +92,64 @@ class HttpRangeReader:
 
 
 def list_audio_files_in_archive(direct_url: str, archive_name: str) -> List[str]:
+    return [
+        filename
+        for filename, _ in list_audio_chapters_in_archive(direct_url, archive_name)
+    ]
+
+
+def list_audio_chapters_in_archive(
+    direct_url: str, archive_name: str
+) -> List[Tuple[str, Optional[str]]]:
+    """Liste les pistes audio triées et lit le titre embarqué (ID3, etc.) de chaque fichier."""
     lower_name = (archive_name or "").lower()
 
     if lower_name.endswith(".zip"):
-        return _list_zip_audio(direct_url)
+        return _list_zip_audio_with_tags(direct_url)
 
     if lower_name.endswith(".rar"):
-        return _list_rar_audio(direct_url)
+        return _list_rar_audio_with_tags(direct_url)
 
     return []
 
 
-def _list_zip_audio(direct_url: str) -> List[str]:
+def _read_member_tag_title(member_stream, filename: str) -> Optional[str]:
+    header = member_stream.read(TAG_HEADER_BYTES)
+    return read_title_from_audio_bytes(header, filename)
+
+
+def _list_zip_audio_with_tags(direct_url: str) -> List[Tuple[str, Optional[str]]]:
     with HttpRangeReader(direct_url) as reader:
         with zipfile.ZipFile(reader) as archive:
-            names = [
-                info.filename
+            infos = [
+                info
                 for info in archive.infolist()
                 if not info.is_dir() and is_audio_filename(info.filename)
             ]
-    names.sort(key=_natural_sort_key)
-    return names
+            infos.sort(key=lambda info: _natural_sort_key(info.filename))
+            chapters: List[Tuple[str, Optional[str]]] = []
+            for info in infos:
+                with archive.open(info) as member:
+                    tag_title = _read_member_tag_title(member, info.filename)
+                chapters.append((info.filename, tag_title))
+    return chapters
 
 
-def _list_rar_audio(direct_url: str) -> List[str]:
+def _list_rar_audio_with_tags(direct_url: str) -> List[Tuple[str, Optional[str]]]:
     with HttpRangeReader(direct_url) as reader:
         with rarfile.RarFile(reader) as archive:
-            names = [
-                info.filename
+            infos = [
+                info
                 for info in archive.infolist()
                 if not info.is_dir() and is_audio_filename(info.filename)
             ]
-    names.sort(key=_natural_sort_key)
-    return names
+            infos.sort(key=lambda info: _natural_sort_key(info.filename))
+            chapters: List[Tuple[str, Optional[str]]] = []
+            for info in infos:
+                with archive.open(info) as member:
+                    tag_title = _read_member_tag_title(member, info.filename)
+                chapters.append((info.filename, tag_title))
+    return chapters
 
 
 def extract_rar_audio_to_path(

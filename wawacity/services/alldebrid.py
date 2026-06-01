@@ -5,27 +5,55 @@ from typing import Optional, Dict, List, Any, Tuple
 from urllib.parse import urlencode
 from asyncio import sleep
 
-from wawacity.services.mediaflow import get_mediaflow_settings, mediaflow_service
+import httpx
+
+from wawacity.services.mediaflow import (
+    build_archive_fetch_url,
+    get_mediaflow_server_access,
+    is_mediaflow_enabled,
+    mediaflow_service,
+)
 from wawacity.utils.http_client import http_client
 from wawacity.utils.archive import (
     is_archive_filename,
     is_audio_filename,
-    list_audio_files_in_archive,
+    list_audio_chapters_in_archive,
     extract_rar_audio_to_path,
     extract_zip_audio_to_path,
 )
-from wawacity.core.config import ALLDEBRID_API_URL, ALLDEBRID_MAX_RETRIES, RETRY_DELAY_SECONDS
+from wawacity.utils.audio_tags import (
+    format_chapter_title_from_filename,
+    merge_chapter_title,
+)
+from wawacity.core.config import (
+    ALLDEBRID_API_URL,
+    ALLDEBRID_MAX_RETRIES,
+    RETRY_DELAY_SECONDS,
+    CONTENT_CACHE_TTL,
+)
+from wawacity.utils.cache import get_cache, set_cache
+from wawacity.utils.database import database
 from wawacity.utils.logger import logger
 
 AUDIO_CACHE_DIR = os.environ.get("AUDIO_CACHE_DIR", "/app/data/audio_cache")
-ARCHIVE_LIST_TIMEOUT = 45.0
+ARCHIVE_LIST_TIMEOUT = 90.0
 ARCHIVE_EXTRACT_TIMEOUT = 180.0
 
+# Liens déjà pointant vers un hébergeur (ex. Bookys → 1fichier) : pas de redirector dl-protect.
+DIRECT_HOSTER_MARKERS = (
+    "1fichier.com",
+    "turbobit.",
+    "rapidgator.",
+    "uptobox.",
+    "dailyuploads.",
+    "mega.nz",
+    "mediafire.com",
+)
 
-def _format_chapter_title(filename: str) -> str:
-    name = os.path.splitext(filename or "")[0]
-    name = name.replace("_", " ").replace(".", " ")
-    return name.strip() or filename or "Chapitre"
+
+def _is_direct_hoster_link(url: str) -> bool:
+    lower = (url or "").lower()
+    return any(marker in lower for marker in DIRECT_HOSTER_MARKERS)
 
 
 class AllDebridService:
@@ -49,11 +77,27 @@ class AllDebridService:
         query = urlencode(pairs)
         destination = f"{ALLDEBRID_API_URL}{path}?{query}"
 
-        _, internal_url, password = get_mediaflow_settings(config)
-        if internal_url and password:
-            logger.log("ALLDEBRID", "Routing API call via MediaFlow forward proxy")
-            return await mediaflow_service.forward_get(internal_url, password, destination)
+        proxy_base, password = get_mediaflow_server_access(config)
+        if proxy_base and password:
+            logger.log(
+                "ALLDEBRID",
+                f"Routing API call via MediaFlow forward ({proxy_base})",
+            )
+            return await mediaflow_service.forward_get(
+                proxy_base, password, destination
+            )
 
+        if is_mediaflow_enabled(config):
+            logger.error(
+                "AllDebrid API requires MediaFlow but mediaflow_url/password missing"
+            )
+            return httpx.Response(
+                503,
+                content=b'{"status":"error","error":{"code":"MEDIAFLOW_REQUIRED"}}',
+                request=httpx.Request("GET", destination),
+            )
+
+        logger.log("ALLDEBRID", "MediaFlow disabled — direct AllDebrid call")
         return await http_client.get(f"{ALLDEBRID_API_URL}{path}", params=dict(pairs))
 
     async def _extract_redirector_links(
@@ -116,10 +160,16 @@ class AllDebridService:
             config,
         )
         if response.status_code != 200:
+            logger.error(f"Unlock HTTP {response.status_code}")
             return None
 
         data = response.json()
         if data.get("status") != "success":
+            error = data.get("error", {})
+            logger.error(
+                f"Unlock rejected: {error.get('code', 'UNKNOWN')} - "
+                f"{error.get('message', 'Unknown')}"
+            )
             return None
 
         return data.get("data", {}).get("link")
@@ -131,14 +181,27 @@ class AllDebridService:
         apikey: str,
         config: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
+        cache_id = hashlib.sha256(
+            f"{virtual_link}|{archive_name}|id3v2".encode()
+        ).hexdigest()[:32]
+        cached = await get_cache(database, "archive_chapters", cache_id, None)
+        if cached is not None:
+            logger.log(
+                "ALLDEBRID",
+                f"Archive chapters cache hit ({len(cached)} file(s))",
+            )
+            return cached
+
         direct_url = await self._unlock_virtual_link(virtual_link, apikey, config)
         if not direct_url:
             return []
 
+        fetch_url = build_archive_fetch_url(direct_url, config)
+
         try:
-            audio_files = await asyncio.wait_for(
+            audio_entries = await asyncio.wait_for(
                 asyncio.to_thread(
-                    list_audio_files_in_archive, direct_url, archive_name
+                    list_audio_chapters_in_archive, fetch_url, archive_name
                 ),
                 timeout=ARCHIVE_LIST_TIMEOUT,
             )
@@ -150,21 +213,36 @@ class AllDebridService:
             return []
 
         chapters: List[Dict[str, Any]] = []
-        for episode_number, filename in enumerate(audio_files, start=1):
+        id3_count = 0
+        for episode_number, (filename, tag_title) in enumerate(audio_entries, start=1):
+            if tag_title:
+                id3_count += 1
             chapters.append(
                 {
                     "index": episode_number - 1,
                     "episode": episode_number,
                     "filename": filename,
-                    "title": _format_chapter_title(os.path.basename(filename)),
+                    "title": merge_chapter_title(
+                        os.path.basename(filename), tag_title
+                    ),
                     "archive": True,
                 }
             )
 
-        if len(chapters) > 1:
+        if chapters:
+            await set_cache(
+                database,
+                "archive_chapters",
+                cache_id,
+                None,
+                chapters,
+                CONTENT_CACHE_TTL,
+                None,
+            )
             logger.log(
                 "ALLDEBRID",
-                f"Found {len(chapters)} audio chapter(s) inside archive '{archive_name}'",
+                f"Found {len(chapters)} audio chapter(s) inside archive '{archive_name}' "
+                f"({id3_count} with embedded title)",
             )
         return chapters
 
@@ -174,9 +252,12 @@ class AllDebridService:
         apikey: str,
         config: Optional[Dict] = None,
     ) -> List[Dict[str, Any]]:
-        redirected_links = await self._extract_redirector_links(
-            dl_protect_link, apikey, config
-        )
+        if _is_direct_hoster_link(dl_protect_link):
+            redirected_links = [dl_protect_link]
+        else:
+            redirected_links = await self._extract_redirector_links(
+                dl_protect_link, apikey, config
+            )
         if not redirected_links:
             return []
 
@@ -210,7 +291,7 @@ class AllDebridService:
                     "index": index,
                     "episode": len(chapters) + 1,
                     "filename": filename,
-                    "title": _format_chapter_title(filename),
+                    "title": format_chapter_title_from_filename(filename),
                     "size": info.get("size"),
                 }
             )
@@ -250,10 +331,12 @@ class AllDebridService:
             if not direct_url:
                 return None
 
+            fetch_url = build_archive_fetch_url(direct_url, config)
+
             try:
                 audio_files = await asyncio.wait_for(
                     asyncio.to_thread(
-                        list_audio_files_in_archive, direct_url, archive_name
+                        list_audio_files_in_archive, fetch_url, archive_name
                     ),
                     timeout=ARCHIVE_LIST_TIMEOUT,
                 )
@@ -275,7 +358,7 @@ class AllDebridService:
                     await asyncio.wait_for(
                         asyncio.to_thread(
                             extract_rar_audio_to_path,
-                            direct_url,
+                            fetch_url,
                             member_name,
                             cache_path,
                         ),
@@ -285,7 +368,7 @@ class AllDebridService:
                     await asyncio.wait_for(
                         asyncio.to_thread(
                             extract_zip_audio_to_path,
-                            direct_url,
+                            fetch_url,
                             member_name,
                             cache_path,
                         ),
@@ -319,9 +402,16 @@ class AllDebridService:
 
         for attempt in range(ALLDEBRID_MAX_RETRIES):
             try:
-                redirected_links = await self._extract_redirector_links(
-                    dl_protect_link, apikey, config
-                )
+                if _is_direct_hoster_link(dl_protect_link):
+                    logger.log(
+                        "ALLDEBRID",
+                        "Direct hoster URL (Bookys etc.), using /link/unlock",
+                    )
+                    redirected_links = [dl_protect_link]
+                else:
+                    redirected_links = await self._extract_redirector_links(
+                        dl_protect_link, apikey, config
+                    )
                 if not redirected_links:
                     logger.error(f"No redirected links (attempt {attempt + 1}/{ALLDEBRID_MAX_RETRIES}, retry in {RETRY_DELAY_SECONDS}s)")
                     await sleep(RETRY_DELAY_SECONDS)

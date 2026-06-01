@@ -700,6 +700,28 @@
                         Miroir Wawacity utilisé pour la recherche (ex. <a href="https://www.wawacity.team" target="_blank">wawacity.team</a>)
                     </div>
                 </div>
+
+                <label class="checkbox-item" style="margin-top: var(--spacing-md);">
+                    <input type="checkbox" id="enable_bookys" value="1" onchange="syncBookysFields()">
+                    <div class="checkbox-content">
+                        <div class="checkbox-title">Activer Bookys (livres audio)</div>
+                        <div class="checkbox-desc">Recherche et téléchargements via bookys-ebooks.com (en complément de Wawacity)</div>
+                    </div>
+                </label>
+
+                <div class="form-group" id="bookysUrlGroup" style="display: none; margin-top: var(--spacing-md);">
+                    <label class="form-label" for="bookys_url">URL Bookys</label>
+                    <div class="input-group">
+                        <input type="url" id="bookys_url" class="input" placeholder="{{DEFAULT_BOOKYS_URL}}" autocomplete="off">
+                        <svg class="input-icon" viewBox="0 0 24 24" fill="currentColor">
+                            <path fill-rule="evenodd" d="M12.97 1.816A5.23 5.23 0 0114.25 5.25v1.875c0 .207.168.375.375.375H16.5a5.23 5.23 0 013.434 1.279 9.768 9.768 0 00-6.963-6.963zM12 9a3.75 3.75 0 100 7.5A3.75 3.75 0 0012 9zm-8.25 3.75a8.25 8.25 0 1116.5 0 8.25 8.25 0 01-16.5 0z" clip-rule="evenodd" />
+                        </svg>
+                    </div>
+                    <div class="help-text">
+                        Miroir Bookys (ex. <a href="https://www6.bookys-ebooks.com" target="_blank">www6.bookys-ebooks.com</a>).
+                        Protégé par Cloudflare : configurez <code>PROXY_URL</code> sur le serveur si le scraping échoue.
+                    </div>
+                </div>
             </section>
 
             <section class="section">
@@ -767,7 +789,7 @@
                         <input type="checkbox" id="cat_audiobook" value="audiobook" checked>
                         <div class="checkbox-content">
                             <div class="checkbox-title">Audiobooks</div>
-                            <div class="checkbox-desc">Recherche Wawacity ?p=ebooks&amp;s=audiobooks — IDs wa:… ou ol:… (Open Library)</div>
+                            <div class="checkbox-desc">Wawacity (wa:…) et optionnellement Bookys (bk:…) — recherche Open Library (ol:…)</div>
                         </div>
                     </label>
                 </div>
@@ -880,6 +902,7 @@
     <script>
         // --- Global Variables ---
         const DEFAULT_WAWACITY_URL = "{{DEFAULT_WAWACITY_URL}}";
+        const DEFAULT_BOOKYS_URL = "{{DEFAULT_BOOKYS_URL}}";
         const INITIAL_CONFIG = {{INITIAL_CONFIG}};
         const DEFAULT_CATEGORIES = ["movie", "series", "audiobook"];
         let excludedWords = [];
@@ -915,8 +938,19 @@
             }
         }
 
+        function syncBookysFields() {
+            const enabled = document.getElementById("enable_bookys").checked;
+            document.getElementById("bookysUrlGroup").style.display = enabled ? "block" : "none";
+            const bookysInput = document.getElementById("bookys_url");
+            if (enabled && !bookysInput.value.trim()) {
+                bookysInput.value = DEFAULT_BOOKYS_URL;
+            }
+        }
+
         function loadInitialConfig() {
             const wawacityInput = document.getElementById("wawacity_url");
+            const bookysInput = document.getElementById("bookys_url");
+            const enableBookys = document.getElementById("enable_bookys");
 
             if (INITIAL_CONFIG && typeof INITIAL_CONFIG === "object") {
                 if (INITIAL_CONFIG.alldebrid) {
@@ -927,6 +961,12 @@
                 }
                 if (INITIAL_CONFIG.wawacity_url) {
                     wawacityInput.value = INITIAL_CONFIG.wawacity_url;
+                }
+                if (INITIAL_CONFIG.enable_bookys) {
+                    enableBookys.checked = true;
+                }
+                if (INITIAL_CONFIG.bookys_url) {
+                    bookysInput.value = INITIAL_CONFIG.bookys_url;
                 }
                 if (Array.isArray(INITIAL_CONFIG.excluded_words)) {
                     excludedWords = INITIAL_CONFIG.excluded_words;
@@ -952,6 +992,8 @@
             if (!wawacityInput.value.trim()) {
                 wawacityInput.value = DEFAULT_WAWACITY_URL;
             }
+
+            syncBookysFields();
         }
 
         // --- Excluded Words Management ---
@@ -1059,6 +1101,16 @@
                     enabled_categories: enabledCategories,
                     excluded_words: excludedWords
                 };
+
+                if (document.getElementById("enable_bookys").checked) {
+                    const bookysUrl = normalizeWawacityUrl(document.getElementById("bookys_url").value);
+                    if (!bookysUrl) {
+                        showNotification('URL Bookys invalide (http ou https requis)', 'error');
+                        return;
+                    }
+                    config.enable_bookys = true;
+                    config.bookys_url = bookysUrl;
+                }
 
                 const mediaflowUrl = normalizeWawacityUrl(document.getElementById('mediaflow_url').value);
                 const mediaflowPassword = document.getElementById('mediaflow_password').value.trim();

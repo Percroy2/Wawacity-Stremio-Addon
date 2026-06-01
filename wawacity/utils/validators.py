@@ -6,6 +6,7 @@ from urllib.parse import urlparse, unquote
 
 from wawacity.core.categories import normalize_enabled_categories
 from wawacity.utils.audiobook_ids import parse_audiobook_content_id
+from wawacity.utils.bookys_ids import parse_bookys_content_id
 
 # --- Wawacity URL normalization ---
 def normalize_wawacity_url(url: Optional[str]) -> Optional[str]:
@@ -36,7 +37,7 @@ def decode_wa_title(content_id: str) -> Optional[str]:
 def resolve_content_category(content_id: str, content_type: str) -> str:
     content_id_formatted = content_id.replace(".json", "")
 
-    if content_id_formatted.startswith("wa:ebook:"):
+    if content_id_formatted.startswith(("wa:ebook:", "bk:ebook:")):
         return "audiobook"
 
     if content_id_formatted.startswith(("wa:", "ol:")) or (
@@ -91,6 +92,19 @@ def validate_config(config_base64: Optional[str]) -> Optional[Dict[str, str]]:
             return None
         config_dict["wawacity_url"] = normalized
 
+    if config_dict.get("enable_bookys"):
+        bookys_url = (config_dict.get("bookys_url") or "").strip()
+        if bookys_url:
+            normalized_bookys = normalize_wawacity_url(bookys_url)
+            if not normalized_bookys:
+                return None
+            config_dict["bookys_url"] = normalized_bookys
+        else:
+            config_dict.pop("bookys_url", None)
+    else:
+        config_dict.pop("bookys_url", None)
+        config_dict["enable_bookys"] = False
+
     if "excluded_words" in config_dict:
         excluded_words = config_dict["excluded_words"]
         if not isinstance(excluded_words, list):
@@ -132,12 +146,26 @@ def extract_media_info(content_id: str, content_type: str) -> Dict[str, Optional
     category = resolve_content_category(content_id_formatted, content_type)
 
     if category == "audiobook":
+        if content_id_formatted.startswith("bk:ebook:"):
+            book_path, season, episode = parse_bookys_content_id(content_id_formatted)
+            return {
+                "category": "audiobook",
+                "content_id": content_id_formatted,
+                "bookys_path": book_path,
+                "provider": "bookys",
+                "season": season,
+                "episode": episode,
+                "search_title": None,
+                "imdb_id": None,
+            }
+
         if content_id_formatted.startswith("wa:ebook:"):
             ebook_id, season, episode = parse_audiobook_content_id(content_id_formatted)
             return {
                 "category": "audiobook",
                 "content_id": content_id_formatted,
                 "ebook_id": ebook_id,
+                "provider": "wawacity",
                 "season": season,
                 "episode": episode,
                 "search_title": None,

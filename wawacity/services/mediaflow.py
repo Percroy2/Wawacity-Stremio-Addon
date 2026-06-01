@@ -17,7 +17,8 @@ def get_mediaflow_settings(config: Optional[Dict] = None) -> Tuple[Optional[str]
 
     # Priorité à la config utilisateur (/configure) — instance MediaFlow externe
     if config_url and config_password:
-        return config_url, config_url, config_password
+        internal = (MEDIAFLOW_INTERNAL_URL or config_url).strip().rstrip("/")
+        return config_url, internal, config_password
 
     public_url = (MEDIAFLOW_URL or "").strip().rstrip("/")
     internal_url = (MEDIAFLOW_INTERNAL_URL or public_url).strip().rstrip("/")
@@ -29,9 +30,65 @@ def get_mediaflow_settings(config: Optional[Dict] = None) -> Tuple[Optional[str]
     return public_url, internal_url, password
 
 
+def get_mediaflow_server_access(
+    config: Optional[Dict] = None,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    URL + mot de passe pour appels API / archives initiés par l'addon.
+
+    AllDebrid doit voir l'egress du MediaFlow public (whitelist VPN) :
+    l'URL Docker interne (mediaflow-proxy:8888) renvoie souvent NO_SERVER.
+    """
+    config = config or {}
+    config_url = (config.get("mediaflow_url") or "").strip().rstrip("/")
+    config_password = (config.get("mediaflow_password") or "").strip()
+
+    if config_url and config_password:
+        return config_url, config_password
+
+    public_url = (MEDIAFLOW_URL or "").strip().rstrip("/")
+    env_password = (MEDIAFLOW_PASSWORD or "").strip()
+    if public_url and env_password:
+        return public_url, env_password
+
+    return None, None
+
+
 def is_mediaflow_enabled(config: Optional[Dict] = None) -> bool:
     public_url, _, password = get_mediaflow_settings(config)
     return bool(public_url and password)
+
+
+DEBRID_CDN_MARKERS = (
+    "debrid.it",
+    "alldebrid.com",
+    "alldebrid.download",
+)
+
+
+def needs_proxied_archive_fetch(url: str) -> bool:
+    lower = (url or "").lower()
+    return any(marker in lower for marker in DEBRID_CDN_MARKERS)
+
+
+def build_archive_fetch_url(
+    direct_url: str,
+    config: Optional[Dict] = None,
+) -> str:
+    """URL pour lecture Range d'archives côté serveur (CDN AllDebrid bloque l'IP du conteneur)."""
+    if not needs_proxied_archive_fetch(direct_url):
+        return direct_url
+
+    proxy_base, password = get_mediaflow_server_access(config)
+    if not proxy_base or not password:
+        logger.log(
+            "MEDIAFLOW",
+            "Archive CDN URL without MediaFlow — direct fetch may fail (503)",
+        )
+        return direct_url
+
+    logger.log("MEDIAFLOW", "Routing archive fetch via stream proxy")
+    return build_stream_proxy_url(proxy_base, password, direct_url)
 
 
 def build_stream_proxy_url(

@@ -8,3 +8,4 @@ asyncpg==0.30.0
 python-dotenv==1.0.0
 loguru==0.7.2
 rarfile==4.2
+mutagen==1.47.0

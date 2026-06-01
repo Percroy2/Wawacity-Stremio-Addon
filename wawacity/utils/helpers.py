@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from urllib.parse import quote_plus, urlparse, parse_qs, unquote
 from base64 import b64encode, b64decode
 
@@ -13,6 +13,34 @@ def get_wawacity_url(config: Dict[str, Any]) -> str:
 
     url = (config.get("wawacity_url") or WAWACITY_URL).strip().rstrip("/")
     return url
+
+
+def is_bookys_enabled(config: Dict[str, Any]) -> bool:
+    if not config.get("enable_bookys"):
+        return False
+
+    return bool(get_bookys_url(config))
+
+
+def pick_audiobook_stream_link(results: List[Dict[str, Any]]) -> Optional[str]:
+    for result in results:
+        hoster = (result.get("hoster") or "").lower()
+        if "1fichier" in hoster and result.get("dl_protect"):
+            return result["dl_protect"]
+    for result in results:
+        if result.get("dl_protect"):
+            return result["dl_protect"]
+    return None
+
+
+def get_bookys_url(config: Dict[str, Any]) -> Optional[str]:
+    from wawacity.core.config import BOOKYS_URL
+
+    if not config.get("enable_bookys"):
+        return None
+
+    url = (config.get("bookys_url") or BOOKYS_URL or "").strip().rstrip("/")
+    return url or None
 
 # --- Cache key creation ---
 def create_cache_key(

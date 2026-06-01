@@ -10,6 +10,7 @@ CUSTOM_LOG_LEVELS = {
     "CACHE": {"no": 25, "icon": "💾", "color": "<white>"},
     "TMDB": {"no": 26, "icon": "🎭", "color": "<magenta>"},
     "ALLDEBRID": {"no": 27, "icon": "☁️", "color": "<blue>"},
+    "MEDIAFLOW": {"no": 32, "icon": "🔀", "color": "<cyan>"},
     "DATABASE": {"no": 28, "icon": "🗄️", "color": "<yellow>"},
     "LOCK": {"no": 29, "icon": "🔒", "color": "<yellow>"},
     "CLEANUP": {"no": 30, "icon": "🧹", "color": "<white>"},

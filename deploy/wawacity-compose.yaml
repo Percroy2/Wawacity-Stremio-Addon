@@ -1,0 +1,78 @@
+# Stack Wawacity + MediaFlow + FlareSolverr (Bookys / Cloudflare)
+# Emplacement serveur : /opt/docker/dockge-enhanced/stacks/wawacity/compose.yaml
+
+services:
+  flaresolverr:
+    image: ghcr.io/flaresolverr/flaresolverr:latest
+    container_name: flaresolverr
+    restart: unless-stopped
+    environment:
+      LOG_LEVEL: info
+      CAPTCHA_SOLVER: none
+    shm_size: "2gb"
+    networks:
+      - wawacity
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://127.0.0.1:8191/"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+
+  mediaflow-proxy:
+    image: mhdzumair/mediaflow-proxy:latest
+    container_name: mediaflow-proxy
+    restart: unless-stopped
+    environment:
+      PORT: "8888"
+      API_PASSWORD: ${MEDIAFLOW_PASSWORD}
+      PROXY_URL: ${MEDIAFLOW_PROXY_URL:-}
+    networks:
+      - wawacity
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8888/docs')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+  wawacity:
+    build: ./src
+    container_name: wawacity-addon
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MEDIAFLOW_INTERNAL_URL: http://mediaflow-proxy:8888
+      FLARESOLVERR_URL: http://flaresolverr:8191
+    volumes:
+      - ./data:/app/data
+    networks:
+      - wawacity
+    depends_on:
+      flaresolverr:
+        condition: service_healthy
+      mediaflow-proxy:
+        condition: service_started
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:7000/health')",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+networks:
+  wawacity:
+    name: wawacity

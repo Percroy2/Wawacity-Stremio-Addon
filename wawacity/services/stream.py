@@ -6,11 +6,19 @@ from wawacity.services.alldebrid import alldebrid_service
 from wawacity.scrapers.movie import movie_scraper
 from wawacity.scrapers.series import series_scraper
 from wawacity.scrapers.audiobook import audiobook_scraper
+from wawacity.scrapers.bookys import bookys_scraper
 from wawacity.core.categories import is_category_enabled
 from wawacity.utils.database import SearchLock, is_dead_link, mark_dead_link, database
 from wawacity.utils.cache import get_cache, set_cache
 from wawacity.utils.validators import extract_media_info
-from wawacity.utils.helpers import encode_config_to_base64, quote_url_param, get_wawacity_url
+from wawacity.utils.helpers import (
+    encode_config_to_base64,
+    quote_url_param,
+    get_wawacity_url,
+    get_bookys_url,
+    is_bookys_enabled,
+    pick_audiobook_stream_link,
+)
 from wawacity.utils.audiobook_ids import wawacity_page_path
 from wawacity.utils.logger import logger
 from wawacity.core.config import CONTENT_CACHE_TTL, DEAD_LINK_TTL
@@ -31,7 +39,7 @@ class StreamService:
             logger.log("STREAM", f"Category '{category}' disabled in configuration")
             return []
 
-        if media_info.get("ebook_id"):
+        if media_info.get("bookys_path") or media_info.get("ebook_id"):
             return await self._get_ebook_streams(media_info, config, base_url)
 
         metadata = await self._get_metadata(media_info, config.get("tmdb", ""))
@@ -48,6 +56,7 @@ class StreamService:
             media_info.get("season"),
             media_info.get("episode"),
             wawacity_url,
+            config,
         )
 
         if not results:
@@ -82,20 +91,47 @@ class StreamService:
         config: Dict,
         base_url: str,
     ) -> List[Dict]:
-        wawacity_url = get_wawacity_url(config)
-        ebook_id = media_info.get("ebook_id")
-        if not ebook_id:
-            return []
+        results: List[Dict] = []
+        title = ""
 
-        page_path = wawacity_page_path(ebook_id)
-        results = await audiobook_scraper.get_streams_by_page_path(page_path, wawacity_url)
+        bookys_path = media_info.get("bookys_path")
+        if bookys_path:
+            bookys_url = get_bookys_url(config)
+            if bookys_url:
+                results = await bookys_scraper.get_streams_by_book_path(
+                    bookys_path, bookys_url
+                )
+                meta = await bookys_scraper.get_meta(bookys_url, bookys_path, config)
+                title = meta.get("name") if meta else bookys_path.replace("-", " ")
+
+        ebook_id = media_info.get("ebook_id")
+        if ebook_id and not bookys_path:
+            wawacity_url = get_wawacity_url(config)
+            page_path = wawacity_page_path(ebook_id)
+            results = await audiobook_scraper.get_streams_by_page_path(
+                page_path, wawacity_url
+            )
+            meta = await audiobook_scraper.get_meta(wawacity_url, ebook_id, config)
+            title = meta.get("name") if meta else ebook_id.replace("-", " ")
 
         if not results:
-            logger.error(f"No streams found for ebook '{ebook_id}'")
+            ref = bookys_path or ebook_id or "?"
+            logger.error(f"No streams found for ebook '{ref}'")
             return []
 
-        meta = await audiobook_scraper.get_meta(wawacity_url, ebook_id, config)
-        title = meta.get("name") if meta else ebook_id.replace("-", " ")
+        apikey = (config.get("alldebrid") or "").strip()
+        if apikey:
+            stream_link = pick_audiobook_stream_link(results)
+            if stream_link:
+                try:
+                    chapters = await alldebrid_service.list_audio_chapters(
+                        stream_link, apikey, config
+                    )
+                    if len(chapters) > 1:
+                        for result in results:
+                            result["chapter_count"] = len(chapters)
+                except Exception as e:
+                    logger.error(f"Archive chapter count lookup failed: {e}")
 
         streams = await self._format_streams(
             results,
@@ -145,9 +181,10 @@ class StreamService:
         season: Optional[str],
         episode: Optional[str],
         wawacity_url: str,
+        config: Optional[Dict] = None,
     ) -> List[Dict]:
         if category == "audiobook":
-            return await self._search_audiobook(title, year, wawacity_url)
+            return await self._search_audiobook(title, year, wawacity_url, config)
         if category == "series":
             return await self._search_series(title, year, season, episode, wawacity_url)
         return await self._search_movie(title, year, wawacity_url)
@@ -174,16 +211,33 @@ class StreamService:
             return results
 
     async def _search_audiobook(
-        self, title: str, year: Optional[str], wawacity_url: str
+        self,
+        title: str,
+        year: Optional[str],
+        wawacity_url: str,
+        config: Optional[Dict] = None,
     ) -> List[Dict]:
+        config = config or {}
+        cache_scope = wawacity_url
+        bookys_url = get_bookys_url(config) if is_bookys_enabled(config) else None
+        if bookys_url:
+            cache_scope = f"{wawacity_url}|{bookys_url}"
+
         async with SearchLock("audiobook", title, year):
             cached_results = await get_cache(
-                database, "audiobook", title, year, wawacity_url
+                database, "audiobook", title, year, cache_scope
             )
             if cached_results is not None:
                 return cached_results
 
-            results = await audiobook_scraper.search(title, year, wawacity_url)
+            results: List[Dict] = []
+            if bookys_url:
+                bookys_results = await bookys_scraper.search(title, year, bookys_url)
+                results.extend(bookys_results)
+
+            results.extend(
+                await audiobook_scraper.search(title, year, wawacity_url)
+            )
 
             if results:
                 await set_cache(
@@ -193,7 +247,7 @@ class StreamService:
                     year,
                     results,
                     CONTENT_CACHE_TTL,
-                    wawacity_url,
+                    cache_scope,
                 )
 
             return results
@@ -255,9 +309,15 @@ class StreamService:
     ) -> List[Dict]:
         streams = []
         dead_links_count = 0
-        stream_prefix = "🎧 Wawacity" if category == "audiobook" else "🌇 Wawacity"
-
         for res in results:
+            if category == "audiobook":
+                stream_prefix = (
+                    "📚 Bookys"
+                    if res.get("provider") == "bookys"
+                    else "🎧 Wawacity"
+                )
+            else:
+                stream_prefix = "🌇 Wawacity"
             dl_link = res.get("dl_protect")
             if not dl_link:
                 continue
@@ -280,6 +340,9 @@ class StreamService:
             if category == "audiobook" and episode:
                 playback_url += f"&episode={quote_url_param(str(episode))}"
             stream_name = f"{stream_prefix} {quality}"
+            chapter_count = res.get("chapter_count")
+            if category == "audiobook" and chapter_count and int(chapter_count) > 1:
+                stream_name += f" · {chapter_count} ch."
 
             description_parts = []
             if language and language not in ["N/A", "?"]:

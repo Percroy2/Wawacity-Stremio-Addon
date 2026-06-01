@@ -109,17 +109,6 @@ def build_livres_catalog() -> Dict[str, Any]:
     }
 
 
-def build_livres_search_catalog() -> Dict[str, Any]:
-    return {
-        "type": "series",
-        "id": LIVRES_SEARCH_CATALOG_ID,
-        "name": "Livres",
-        "extra": [
-            {"name": "search", "isRequired": True},
-        ],
-    }
-
-
 def build_manifest(config: Dict[str, Any], base_manifest: Dict[str, Any]) -> Dict[str, Any]:
     manifest = dict(base_manifest)
     enabled = get_enabled_categories(config)
@@ -130,14 +119,15 @@ def build_manifest(config: Dict[str, Any], base_manifest: Dict[str, Any]) -> Dic
         prefixes.append("tt")
     if "audiobook" in enabled:
         prefixes.extend(["wa", "ol"])
+        if config.get("enable_bookys"):
+            prefixes.append("bk")
     manifest["idPrefixes"] = prefixes or ["tt"]
 
     if "audiobook" in enabled:
         manifest["resources"] = ["catalog", "meta", "stream"]
-        manifest["catalogs"] = [
-            build_livres_catalog(),
-            build_livres_search_catalog(),
-        ]
+        # Un seul catalogue : évite deux rangées « Livres - Series » identiques dans Discover.
+        # La recherche passe par l'extra `search` optionnel de wawacity_livres.
+        manifest["catalogs"] = [build_livres_catalog()]
     else:
         manifest["resources"] = ["stream"]
         manifest["catalogs"] = []

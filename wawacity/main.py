@@ -14,7 +14,8 @@ from wawacity.core.config import (
     PORT, PROXY_URL, ADDON_NAME, ADDON_ID, ADDON_MANIFEST,
     WAWACITY_URL, DATABASE_TYPE, DATABASE_VERSION, DATABASE_PATH,
     CONTENT_CACHE_TTL, DEAD_LINK_TTL, SCRAPE_LOCK_TTL, SCRAPE_WAIT_TIMEOUT,
-    ALLDEBRID_MAX_RETRIES, RETRY_DELAY_SECONDS, CLEANUP_INTERVAL
+    ALLDEBRID_MAX_RETRIES, RETRY_DELAY_SECONDS, CLEANUP_INTERVAL,
+    FLARESOLVERR_URL,
 )
 from wawacity.utils.logger import logger
 
@@ -95,6 +96,11 @@ if __name__ == "__main__":
         logger.log("STARTUP", "Proxy: enabled")
     else:
         logger.log("STARTUP", "Proxy: disabled")
+
+    if FLARESOLVERR_URL:
+        logger.log("STARTUP", f"FlareSolverr: {FLARESOLVERR_URL}")
+    else:
+        logger.log("STARTUP", "FlareSolverr: disabled")
     
     # --- Run uvicorn ---
     uvicorn.run(

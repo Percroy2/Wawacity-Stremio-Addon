@@ -14,6 +14,9 @@ PORT = int(environ.get("PORT", "7000"))
 
 # --- Source configuration ---
 WAWACITY_URL = environ.get("WAWACITY_URL", "https://wawacity.diy").rstrip("/")
+BOOKYS_URL = environ.get("BOOKYS_URL", "https://www6.bookys-ebooks.com").rstrip("/")
+# ID catégorie Bookys « Ebook audio » (filtre /search?cat=…)
+BOOKYS_EBOOK_AUDIO_CAT_ID = environ.get("BOOKYS_EBOOK_AUDIO_CAT_ID", "75")
 
 # --- Database configuration ---
 DATABASE_VERSION = "1.0"
@@ -46,6 +49,9 @@ ADDON_PASSWORD = environ.get("ADDON_PASSWORD", "")
 # --- Proxy configuration ---
 PROXY_URL = environ.get("PROXY_URL")
 
+# --- FlareSolverr (contournement Cloudflare pour Bookys) ---
+FLARESOLVERR_URL = environ.get("FLARESOLVERR_URL", "").rstrip("/")
+
 # --- MediaFlow Proxy configuration ---
 # Public URL used in playback links returned to Stremio (must be reachable by clients).
 MEDIAFLOW_URL = environ.get("MEDIAFLOW_URL", "").rstrip("/")
@@ -60,7 +66,7 @@ CLEANUP_INTERVAL = 60  # 60 seconds cleanup cycle
 ADDON_MANIFEST = {
     "id": ADDON_ID,
     "name": ADDON_NAME,
-    "version": "2.2.2",
+    "version": "2.2.3",
     "description": "Accès au contenu de Wawacity via Stremio & AllDebrid (non officiel)",
     "catalogs": [],
     "resources": ["stream"],

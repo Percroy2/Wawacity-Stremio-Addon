@@ -5,7 +5,7 @@ from fastapi import APIRouter, Request, Query, Path
 from fastapi.responses import JSONResponse, RedirectResponse, FileResponse, HTMLResponse, Response
 from typing import Optional
 
-from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD, MEDIAFLOW_URL, MEDIAFLOW_PASSWORD
+from wawacity.core.config import ADDON_MANIFEST, WAWACITY_URL, BOOKYS_URL, PROXY_URL, CUSTOM_HTML, ADDON_PASSWORD, MEDIAFLOW_URL, MEDIAFLOW_PASSWORD
 from wawacity.core.categories import build_manifest
 from wawacity.utils.validators import validate_config, decode_config, normalize_wawacity_url
 from wawacity.services.stream import stream_service
@@ -36,6 +36,7 @@ def _render_configure_html(initial_config: Optional[dict] = None) -> str:
 
     html_content = html_content.replace("{{CUSTOM_HTML}}", CUSTOM_HTML)
     html_content = html_content.replace("{{DEFAULT_WAWACITY_URL}}", WAWACITY_URL)
+    html_content = html_content.replace("{{DEFAULT_BOOKYS_URL}}", BOOKYS_URL)
     html_content = html_content.replace("{{DEFAULT_MEDIAFLOW_URL}}", MEDIAFLOW_URL)
     config_json = json.dumps(initial_config) if initial_config else "null"
     html_content = html_content.replace("{{INITIAL_CONFIG}}", config_json)
