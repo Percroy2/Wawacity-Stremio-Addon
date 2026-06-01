@@ -1,5 +1,6 @@
 from typing import Dict, Optional, Tuple
 from urllib.parse import urlencode
+import gzip
 
 import httpx
 
@@ -57,14 +58,34 @@ class MediaFlowService:
         destination_url: str,
     ) -> httpx.Response:
         forward_endpoint = f"{internal_url.rstrip('/')}/proxy/forward"
-        return await http_client.get(
+        client = await http_client.get_client()
+        async with client.stream(
+            "GET",
             forward_endpoint,
             params={
                 "d": destination_url,
                 "api_password": password,
             },
-            # Avoid gzip double-decode issues via reverse proxies (MediaFlow forward returns JSON).
             headers={"Accept-Encoding": "identity"},
+        ) as response:
+            body = b"".join([chunk async for chunk in response.aiter_raw()])
+            status_code = response.status_code
+            headers = dict(response.headers)
+
+        if body[:2] == b"\x1f\x8b":
+            try:
+                body = gzip.decompress(body)
+            except OSError:
+                pass
+
+        headers.pop("content-encoding", None)
+        headers.pop("Content-Encoding", None)
+
+        return httpx.Response(
+            status_code=status_code,
+            headers=headers,
+            content=body,
+            request=httpx.Request("GET", forward_endpoint),
         )
 
     async def get_public_ip(self, internal_url: str, password: str) -> Optional[str]:
