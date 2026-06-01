@@ -63,6 +63,8 @@ class MediaFlowService:
                 "d": destination_url,
                 "api_password": password,
             },
+            # Avoid gzip double-decode issues via reverse proxies (MediaFlow forward returns JSON).
+            headers={"Accept-Encoding": "identity"},
         )
 
     async def get_public_ip(self, internal_url: str, password: str) -> Optional[str]:
