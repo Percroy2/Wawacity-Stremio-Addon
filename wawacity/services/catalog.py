@@ -1,5 +1,6 @@
 from typing import Dict, List, Optional
 
+from wawacity.core.config import CONTENT_CACHE_TTL
 from wawacity.core.categories import LIVRES_CATALOG_ID, is_category_enabled
 from wawacity.scrapers.audiobook import audiobook_scraper
 from wawacity.utils.audiobook_ids import parse_audiobook_content_id
@@ -15,10 +16,10 @@ class CatalogService:
         extra: Dict[str, str],
     ) -> Dict:
         if catalog_id != LIVRES_CATALOG_ID or not is_category_enabled(config, "audiobook"):
-            return {"metas": []}
+            return {"metas": [], "cacheMaxAge": CONTENT_CACHE_TTL}
 
-        search = extra.get("search") or None
-        genre = extra.get("genre") or None
+        search = (extra.get("search") or "").strip() or None
+        genre = (extra.get("genre") or "").strip() or None
         skip_raw = extra.get("skip", "0") or "0"
 
         try:
@@ -35,10 +36,10 @@ class CatalogService:
                 genre=genre,
                 skip=skip,
             )
-            return {"metas": metas}
+            return {"metas": metas, "cacheMaxAge": CONTENT_CACHE_TTL}
         except Exception as e:
             logger.error(f"Catalog request failed: {e}")
-            return {"metas": []}
+            return {"metas": [], "cacheMaxAge": 60}
 
     async def get_meta(
         self,

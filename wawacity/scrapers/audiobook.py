@@ -1,4 +1,5 @@
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional
+import asyncio
 from re import findall
 
 from selectolax.parser import HTMLParser
@@ -15,6 +16,7 @@ from wawacity.utils.logger import logger
 
 AUDIOBOOK_SUBCATEGORY = "audiobooks"
 CATALOG_PAGE_SIZE = 20
+CATALOG_FETCH_TIMEOUT = 20.0
 
 
 class AudiobookScraper(BaseScraper):
@@ -75,64 +77,84 @@ class AudiobookScraper(BaseScraper):
         genre_slug = AUDIOBOOK_GENRE_SLUGS.get(genre, genre) if genre else None
         cache_label = f"{search or ''}:{genre_slug or ''}:{page}"
 
-        async with SearchLock("audiobook_catalog", cache_label, None):
-            cached = await get_cache(
-                database, "audiobook_catalog", cache_label, None, base_url
+        cached = await get_cache(
+            database, "audiobook_catalog", cache_label, None, base_url
+        )
+        if cached is not None:
+            return cached
+
+        listing_url = self._build_listing_url(base_url, search, genre_slug, page)
+        logger.log("SCRAPER", f"Fetching audiobook catalog: {listing_url}")
+
+        try:
+            response = await asyncio.wait_for(
+                http_client.get(listing_url),
+                timeout=CATALOG_FETCH_TIMEOUT,
             )
-            if cached is not None:
-                return cached
+        except asyncio.TimeoutError:
+            logger.error(f"Audiobook catalog timed out: {listing_url}")
+            return []
+        except Exception as e:
+            logger.error(f"Audiobook catalog request failed: {e}")
+            return []
 
-            listing_url = self._build_listing_url(base_url, search, genre_slug, page)
-            logger.log("SCRAPER", f"Fetching audiobook catalog: {listing_url}")
+        if response.status_code != 200:
+            logger.error(f"Audiobook catalog failed: {response.status_code}")
+            return []
 
-            response = await http_client.get(listing_url)
-            if response.status_code != 200:
-                logger.error(f"Audiobook catalog failed: {response.status_code}")
-                return []
+        metas = self._parse_listing_page(response.text, base_url)
 
-            metas = self._parse_listing_page(response.text, base_url)
+        if metas:
+            await set_cache(
+                database,
+                "audiobook_catalog",
+                cache_label,
+                None,
+                metas,
+                CONTENT_CACHE_TTL,
+                base_url,
+            )
 
-            if metas:
-                await set_cache(
-                    database,
-                    "audiobook_catalog",
-                    cache_label,
-                    None,
-                    metas,
-                    CONTENT_CACHE_TTL,
-                    base_url,
-                )
-
-            return metas
+        return metas
 
     async def get_meta(self, wawacity_url: str, ebook_id: str) -> Optional[Dict]:
         base_url = wawacity_url.rstrip("/")
         page_path = wawacity_page_path(ebook_id)
         stremio_id = f"wa:ebook:{ebook_id}"
 
-        async with SearchLock("audiobook_meta", ebook_id, None):
-            cached = await get_cache(database, "audiobook_meta", ebook_id, None, base_url)
-            if cached is not None and isinstance(cached, dict):
-                return cached
+        cached = await get_cache(database, "audiobook_meta", ebook_id, None, base_url)
+        if cached is not None and isinstance(cached, dict):
+            return cached
 
-            page_url = f"{base_url}/{page_path.lstrip('/')}"
-            response = await http_client.get(page_url)
-            if response.status_code != 200:
-                return None
+        page_url = f"{base_url}/{page_path.lstrip('/')}"
+        try:
+            response = await asyncio.wait_for(
+                http_client.get(page_url),
+                timeout=CATALOG_FETCH_TIMEOUT,
+            )
+        except asyncio.TimeoutError:
+            logger.error(f"Audiobook meta timed out: {page_url}")
+            return None
+        except Exception as e:
+            logger.error(f"Audiobook meta request failed: {e}")
+            return None
 
-            meta = self._parse_detail_page(response.text, base_url, stremio_id, ebook_id)
-            if meta:
-                await set_cache(
-                    database,
-                    "audiobook_meta",
-                    ebook_id,
-                    None,
-                    meta,
-                    CONTENT_CACHE_TTL,
-                    base_url,
-                )
+        if response.status_code != 200:
+            return None
 
-            return meta
+        meta = self._parse_detail_page(response.text, base_url, stremio_id, ebook_id)
+        if meta:
+            await set_cache(
+                database,
+                "audiobook_meta",
+                ebook_id,
+                None,
+                meta,
+                CONTENT_CACHE_TTL,
+                base_url,
+            )
+
+        return meta
 
     def _build_listing_url(
         self,

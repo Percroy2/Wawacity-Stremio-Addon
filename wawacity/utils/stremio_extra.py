@@ -1,5 +1,5 @@
 from typing import Dict
-from urllib.parse import unquote
+from urllib.parse import unquote_plus
 
 
 def parse_catalog_extra(extra_path: str) -> Dict[str, str]:
@@ -13,6 +13,6 @@ def parse_catalog_extra(extra_path: str) -> Dict[str, str]:
         if "=" not in part:
             continue
         key, value = part.split("=", 1)
-        params[unquote(key)] = unquote(value)
+        params[unquote_plus(key)] = unquote_plus(value)
 
     return params

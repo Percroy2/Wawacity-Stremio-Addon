@@ -79,7 +79,7 @@ async def get_catalog(
 ):
     config = validate_config(b64config)
     if not config:
-        return JSONResponse(content={"metas": []})
+        return JSONResponse(content={"metas": [], "cacheMaxAge": 60})
 
     catalog_id_clean = catalog_id.replace(".json", "")
     extra = parse_catalog_extra("")
@@ -102,7 +102,7 @@ async def get_catalog_with_extra(
 ):
     config = validate_config(b64config)
     if not config:
-        return JSONResponse(content={"metas": []})
+        return JSONResponse(content={"metas": [], "cacheMaxAge": 60})
 
     catalog_id_clean = catalog_id.replace(".json", "")
     extra = parse_catalog_extra(extra_path)
