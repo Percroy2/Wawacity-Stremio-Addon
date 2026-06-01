@@ -17,6 +17,7 @@ from wawacity.utils.logger import logger
 AUDIOBOOK_SUBCATEGORY = "audiobooks"
 CATALOG_PAGE_SIZE = 20
 CATALOG_FETCH_TIMEOUT = 20.0
+CATALOG_CACHE_VERSION = "v2"
 
 
 class AudiobookScraper(BaseScraper):
@@ -75,7 +76,7 @@ class AudiobookScraper(BaseScraper):
         base_url = wawacity_url.rstrip("/")
         page = skip // CATALOG_PAGE_SIZE + 1
         genre_slug = AUDIOBOOK_GENRE_SLUGS.get(genre, genre) if genre else None
-        cache_label = f"{search or ''}:{genre_slug or ''}:{page}"
+        cache_label = f"{CATALOG_CACHE_VERSION}:{search or ''}:{genre_slug or ''}:{page}"
 
         cached = await get_cache(
             database, "audiobook_catalog", cache_label, None, base_url
@@ -227,11 +228,22 @@ class AudiobookScraper(BaseScraper):
         self, html: str, base_url: str, stremio_id: str, ebook_id: str
     ) -> Optional[Dict]:
         parser = HTMLParser(html)
-        title_node = parser.css_first("div.wa-sub-block-title a")
-        if not title_node:
-            return None
 
-        name = title_node.text(strip=True) or "Livre audio"
+        name = ""
+        title_node = parser.css_first("div.wa-sub-block-title a")
+        if title_node:
+            name = title_node.text(strip=True)
+        else:
+            title_block = parser.css_first("div.wa-sub-block-title")
+            if title_block:
+                name = title_block.text(strip=True)
+            else:
+                heading = parser.css_first("h1")
+                if heading:
+                    name = heading.text(strip=True)
+
+        if not name:
+            return None
 
         img = parser.css_first("img.img-responsive")
         poster = ""
@@ -244,8 +256,12 @@ class AudiobookScraper(BaseScraper):
             if label and label not in genres:
                 genres.append(label)
 
-        desc_node = parser.css_first("div.wa-sub-block.wa-post-detail-item p")
-        description = desc_node.text(strip=True) if desc_node else ""
+        description = ""
+        for desc_node in parser.css("div.wa-sub-block p"):
+            text = desc_node.text(strip=True)
+            if text and len(text) > 40:
+                description = text
+                break
 
         video_id = f"{stremio_id}:1:1"
 
