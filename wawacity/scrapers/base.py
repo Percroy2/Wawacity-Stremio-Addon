@@ -4,7 +4,9 @@ from re import escape, match, search
 from wawacity.utils.http_client import http_client
 
 class BaseScraper:
-    
+
+    SEARCH_LINK_SELECTOR = "div.wa-sub-block-title:has(i.flag)"
+
     # --- Link extraction ---
     @staticmethod
     def extract_link_from_node(node: Node) -> Optional[str]:
@@ -78,7 +80,7 @@ class BaseScraper:
         search_path: str,
         link_prefix: str,
         label: str,
-        title_selector: str = "div.wa-sub-block-title:has(i.flag)",
+        title_selector: str = SEARCH_LINK_SELECTOR,
         separator: str = "|",
     ) -> Optional[Dict]:
         from wawacity.utils.helpers import quote_url_param

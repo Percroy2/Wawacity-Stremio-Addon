@@ -211,7 +211,7 @@ class SeriesScraper(BaseScraper):
             parser = HTMLParser(response.text)
 
             if default_quality == default_language == "N/A":
-                title_nodes = parser.css("div.wa-sub-block-title:has(i.flag)")
+                title_nodes = parser.css(self.SEARCH_LINK_SELECTOR)
                 assert len(title_nodes) == 1
                 default_quality, default_language = self._parse_series_attributes(
                     title_nodes[0].text(strip=True).split("-")[-1]
