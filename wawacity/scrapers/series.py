@@ -209,6 +209,13 @@ class SeriesScraper(BaseScraper):
 
             parser = HTMLParser(response.text)
 
+            if default_quality == default_language == "N/A":
+                title_nodes = parser.css("div.wa-sub-block-title:has(i.flag)")
+                assert len(title_nodes) == 1
+                default_quality, default_language = self._parse_series_attributes(
+                    title_nodes[0].text(strip=True).split("-")[-1]
+                )
+
             # --- Get all rows from DDLLinks table ---
             link_rows = parser.css("#DDLLinks tr")
             if not link_rows:
@@ -223,45 +230,20 @@ class SeriesScraper(BaseScraper):
             for row in link_rows:
                 # --- Check if episode title row ---
                 row_class = str(row.attributes.get("class", ""))
+
                 if "episode-title" in row_class:
                     episode_text = row.text(strip=True)
 
-                    if "Épisode" in episode_text:
-                        # --- Extract episode number ---
-                        episode_match = re_search(r"Épisode (\d+)", episode_text)
-                        current_episode = (
-                            episode_match.group(1) if episode_match else "1"
-                        )
+                    season_match = re_search(r"Saison (\d+)", episode_text)
+                    if season_match:
+                        current_season = season_match.group(1)
 
-                        # --- Extract season if present ---
-                        season_match = re_search(r"Saison (\d+)", episode_text)
-                        if season_match:
-                            current_season = season_match.group(1)
-
-                        # --- Extract language and quality from episode title ---
-                        known_languages = ["VF", "VOSTFR", "MULTI"]
-
-                        episode_language = "N/A"
-                        episode_quality = "N/A"
-
-                        for lang in known_languages:
-                            lang_pattern = (
-                                rf"- {lang}([^-]*?)(?:- |en téléchargement|$)"
-                            )
-                            lang_match = re_search(lang_pattern, episode_text)
-                            if lang_match:
-                                episode_language = lang
-                                quality_part = lang_match.group(1).strip()
-                                if quality_part:
-                                    episode_quality = quality_part
-                                else:
-                                    episode_quality = ""
-                                break
-
-                        # --- Update current variables ---
-                        if episode_language != "N/A":
-                            current_page_language = episode_language
-                            current_page_quality = episode_quality
+                    episode_match = re_search(r"Épisode (\d+)", episode_text)
+                    if episode_match:
+                        current_episode = episode_match.group(1)
+                    else:
+                        current_episode = None
+                        continue
 
                 # --- Check if download link row ---
                 elif current_episode is not None:
