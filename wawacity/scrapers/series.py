@@ -1,4 +1,5 @@
 import asyncio
+import re
 from re import findall
 from re import search as re_search
 from typing import Dict, List, Optional
@@ -13,6 +14,34 @@ from wawacity.utils.logger import logger
 
 
 class SeriesScraper(BaseScraper):
+
+    SERIES_ATTR_PATTERN = re.compile(r"\b(4K\s+UHD|HD)\b", re.IGNORECASE)
+
+    def _parse_series_attributes(self, attribute_block: str) -> tuple[str, str]:
+        # Clean extraneous hyphens (ex: "- MULTI 4K UHD" -> "MULTI 4K UHD")
+        clean_block = attribute_block.strip("- ").strip()
+
+        # Check if known quality is found (HD or 4K UHD)
+        match = self.SERIES_ATTR_PATTERN.search(clean_block)
+
+        if match:
+            quality = match.group(1).upper()
+            # Language should be the only thing remaining once qulity block is removed
+            language = (
+                self.SERIES_ATTR_PATTERN.sub("", clean_block)
+                .strip("- ")
+                .strip()
+                .upper()
+            )
+        else:
+            # if no known quality is found, N/A
+            quality = "N/A"
+            language = clean_block.upper()
+
+        if not language:
+            language = "N/A"
+
+        return quality, language
 
     # --- Main search entry point ---
     async def search(
@@ -75,24 +104,7 @@ class SeriesScraper(BaseScraper):
             page_title = search_result.get("text", "")
             parts = [item for item in page_title.split("|") if item]
             if len(parts) >= 2:
-                first_quality_label = parts[1].translate(
-                    str.maketrans({"[": "", "]": ""})
-                )
-                try:
-                    first_items = findall(r"([\w\- ]+)(?!\()", first_quality_label)
-                    first_quality = (
-                        first_items[0].split(" - ")[0]
-                        if first_items
-                        else first_quality_label.strip()
-                    )
-                    first_language = (
-                        first_items[0].split(" - ")[1]
-                        if len(first_items) > 0 and " - " in first_items[0]
-                        else "N/A"
-                    )
-                except (IndexError, ValueError, AttributeError):
-                    first_quality = first_quality_label.strip()
-                    first_language = "N/A"
+                first_quality, first_language = self._parse_series_attributes(parts[1])
             else:
                 first_quality = "N/A"
                 first_language = "N/A"
