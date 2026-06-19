@@ -7,6 +7,14 @@ class BaseScraper:
 
     SEARCH_LINK_SELECTOR = "div.wa-sub-block-title:has(i.flag)"
 
+    ALLOWED_HOSTERS = {
+        "1fichier": "1fichier",
+        "turbobit": "Turbobit",
+        "rapidgator": "Rapidgator",
+        "uptobox": "Uptobox",
+        "dailyuploads": "Dailyuploads",
+    }
+
     # --- Link extraction ---
     @staticmethod
     def extract_link_from_node(node: Node) -> Optional[str]:

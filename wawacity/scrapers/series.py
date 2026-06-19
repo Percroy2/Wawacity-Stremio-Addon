@@ -255,11 +255,7 @@ class SeriesScraper(BaseScraper):
                         hoster_name = hoster_cell.text().strip() if hoster_cell else ""
 
                         # --- Filter supported hosters ---
-                        if hoster_name.lower() not in [
-                            "1fichier",
-                            "turbobit",
-                            "rapidgator",
-                        ]:
+                        if hoster_name.lower() not in self.ALLOWED_HOSTERS.keys():
                             continue
 
                         size_td = row.css_first('td[width="80px"].text-center')
