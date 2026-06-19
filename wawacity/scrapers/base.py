@@ -13,6 +13,7 @@ class BaseScraper:
         "rapidgator": "Rapidgator",
         "uptobox": "Uptobox",
         "dailyuploads": "Dailyuploads",
+        "uploady": "Uploady",
     }
 
     # --- Link extraction ---
