@@ -1,14 +1,15 @@
 import asyncio
 import re
-from re import findall
 from re import search as re_search
 from typing import Dict, List, Optional
 
 from selectolax.parser import HTMLParser
 from wawacity.core.config import WAWACITY_URL
 from wawacity.scrapers.base import BaseScraper
-from wawacity.utils.helpers import (extract_filename_from_link, format_url,
-                                    quote_url_param)
+from wawacity.utils.helpers import (
+    extract_filename_from_link,
+    format_url,
+)
 from wawacity.utils.http_client import http_client
 from wawacity.utils.logger import logger
 
