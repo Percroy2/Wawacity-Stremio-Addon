@@ -84,3 +84,12 @@ async def test_search_audiobook():
 async def test_search_no_results():
     result = await movie_scraper._search_movie("ImagiedMovie", None, BASE_URL)
     assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+async def test_search_all_from(data_regression):
+    result = await series_scraper.search("FROM", "2026", BASE_URL)
+    assert result is not None
+
+    data_regression.check(result)

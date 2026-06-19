@@ -12,3 +12,4 @@ mutagen==1.47.0
 pytest
 pytest-asyncio
 pytest-recording
+pytest-regressions
