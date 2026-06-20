@@ -1,4 +1,5 @@
 import asyncio
+from enum import Enum
 import re
 from re import search as re_search
 from typing import Dict, List, Optional
@@ -17,6 +18,9 @@ from wawacity.utils.logger import logger
 class SeriesScraper(BaseScraper):
 
     SERIES_ATTR_PATTERN = re.compile(r"\b(4K\s+UHD|HD)\b", re.IGNORECASE)
+    class PAGE_TYPES(Enum):
+        SEASON = 1
+        QUALITY = 2
 
     def _parse_series_attributes(self, attribute_block: str) -> tuple[str, str]:
         # Clean extraneous hyphens (ex: "- MULTI 4K UHD" -> "MULTI 4K UHD")
@@ -115,6 +119,7 @@ class SeriesScraper(BaseScraper):
                     "quality": first_quality,
                     "language": first_language,
                     "page_path": series_link,
+                    "type": self.PAGE_TYPES.SEASON,
                 }
             )
 
@@ -131,20 +136,83 @@ class SeriesScraper(BaseScraper):
                     button_link = button_node.attributes.get("href", "")
                     quality = "N/A"
                     language = "N/A"
+                    type = ""
                     if "saison" in button_text.lower():
                         # Season button
                         if "(" in button_text and ")" in button_text:
                             quality = button_text.split("(")[-1].replace(")", "")  # TODO: Remove ?
+                        type = self.PAGE_TYPES.SEASON
                     else:
                         # Quality button
                         quality, language = self._parse_series_attributes(button_text)
+                        type = self.PAGE_TYPES.QUALITY
                     all_series_pages.append(
                         {
                             "quality": quality,
                             "language": language,
                             "page_path": button_link,
+                            "type": type,
                         }
                     )
+
+            additional_pages = []
+            # Exclude current starting page
+            pages_to_explore = [
+                p for p in all_series_pages
+                if p["type"] is self.PAGE_TYPES.SEASON and p["page_path"] != series_link
+            ]
+
+            for page in pages_to_explore:
+                season_url = f"{base_url}/{page['page_path']}"
+                response = await http_client.get(season_url)
+                if response.status_code != 200:
+                    continue
+
+                parser = HTMLParser(response.text)
+
+                title_nodes = parser.css(self.SEARCH_LINK_SELECTOR)
+                if title_nodes:
+                    assert len(title_nodes) == 1
+                    page["quality"], page["language"] = self._parse_series_attributes(
+                        title_nodes[0].text(strip=True).split("-")[-1]
+                    )
+
+                # Search for quality links for this specific season page
+                buttons = parser.css(
+                    'ul.wa-post-list-ofLinks a[href^="?p=serie&id="]'
+                )
+                for button_node in buttons:
+                    if not button_node:
+                        continue
+
+                    button_text = button_node.text(strip=True)
+                    if "saison" in button_text.lower():
+                        continue
+
+                    quality_page_link = button_node.attributes.get("href", "")
+                    if not quality_page_link:
+                        continue
+
+                    if quality_page_link and any(
+                        p["page_path"] == quality_page_link for p in all_series_pages
+                    ) or any(
+                        p["page_path"] == quality_page_link for p in additional_pages
+                    ):
+                        # Security to avoid duplicates
+                        continue
+
+                    quality, language = self._parse_series_attributes(button_text)
+
+                    additional_pages.append(
+                        {
+                            "quality": quality,
+                            "language": language,
+                            "page_path": quality_page_link,
+                            "type": self.PAGE_TYPES.QUALITY,
+                        }
+                    )
+            # Extend original list with discovered pages
+            all_series_pages.extend(additional_pages)
 
             # --- Process each page in parallel ---
             page_tasks = []
