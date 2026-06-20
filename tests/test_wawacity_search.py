@@ -74,7 +74,7 @@ async def test_search_audiobook():
 
     result = await audiobook_scraper._search_audiobook(search_query, BASE_URL)
 
-    assert result is not None
+    assert result
     assert result["link"] == expected_detail_path
     assert search_query.lower() in result["text"].lower()
 
@@ -90,7 +90,7 @@ async def test_search_no_results():
 @pytest.mark.vcr(record_mode="new_episodes")
 async def test_search_all_from(data_regression):
     result = await series_scraper.search("FROM", "2026", BASE_URL)
-    assert result is not None
+    assert result
 
     data_regression.check(result)
 
