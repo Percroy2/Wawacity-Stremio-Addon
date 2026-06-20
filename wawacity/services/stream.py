@@ -51,6 +51,7 @@ class StreamService:
 
         results = await self._search_content(
             metadata["title"],
+            metadata["title_fr"],
             metadata.get("year"),
             category,
             media_info.get("season"),
@@ -176,6 +177,7 @@ class StreamService:
     async def _search_content(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str],
         category: str,
         season: Optional[str],
@@ -184,18 +186,18 @@ class StreamService:
         config: Optional[Dict] = None,
     ) -> List[Dict]:
         if category == "audiobook":
-            return await self._search_audiobook(title, year, wawacity_url, config)
+            return await self._search_audiobook(title, title_fr, year, wawacity_url, config)
         if category == "series":
-            return await self._search_series(title, year, season, episode, wawacity_url)
-        return await self._search_movie(title, year, wawacity_url)
+            return await self._search_series(title, title_fr, year, season, episode, wawacity_url)
+        return await self._search_movie(title, title_fr, year, wawacity_url)
 
-    async def _search_movie(self, title: str, year: Optional[str], wawacity_url: str) -> List[Dict]:
+    async def _search_movie(self, title: str, title_fr: str | None, year: Optional[str], wawacity_url: str) -> List[Dict]:
         async with SearchLock("film", title, year):
             cached_results = await get_cache(database, "film", title, year, wawacity_url)
             if cached_results is not None:
                 return cached_results
 
-            results = await movie_scraper.search(title, year, wawacity_url)
+            results = await movie_scraper.search(title, title_fr, year, wawacity_url)
 
             if results:
                 await set_cache(
@@ -213,6 +215,7 @@ class StreamService:
     async def _search_audiobook(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str],
         wawacity_url: str,
         config: Optional[Dict] = None,
@@ -236,7 +239,7 @@ class StreamService:
                 results.extend(bookys_results)
 
             results.extend(
-                await audiobook_scraper.search(title, year, wawacity_url)
+                await audiobook_scraper.search(title, title_fr, year, wawacity_url)
             )
 
             if results:
@@ -255,6 +258,7 @@ class StreamService:
     async def _search_series(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str],
         season: Optional[str],
         episode: Optional[str],
@@ -273,7 +277,7 @@ class StreamService:
                     return filtered
                 return cached_results
 
-            results = await series_scraper.search(title, year, wawacity_url)
+            results = await series_scraper.search(title, title_fr, year, wawacity_url)
 
             if results:
                 await set_cache(

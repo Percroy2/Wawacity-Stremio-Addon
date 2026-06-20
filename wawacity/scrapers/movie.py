@@ -14,6 +14,7 @@ class MovieScraper(BaseScraper):
     async def search(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str] = None,
         wawacity_url: Optional[str] = None,
     ) -> List[Dict]:
@@ -21,7 +22,7 @@ class MovieScraper(BaseScraper):
 
         try:
             # --- Search for movie ---
-            search_result = await self._search_movie(title, year, base_url)
+            search_result = await self._search_movie(title, title_fr, year, base_url)
             if not search_result:
                 return []
 
@@ -54,10 +55,11 @@ class MovieScraper(BaseScraper):
     
     # --- Initial movie search ---
     async def _search_movie(
-        self, title: str, year: Optional[str], base_url: str
+        self, title: str, title_fr: str | None, year: Optional[str], base_url: str
     ) -> Optional[Dict]:
         return await self._search_generic(
             title,
+            title_fr,
             year,
             base_url,
             search_path="films",

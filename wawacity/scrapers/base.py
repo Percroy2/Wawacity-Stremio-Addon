@@ -84,6 +84,7 @@ class BaseScraper:
     async def _search_generic(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str],
         base_url: str,
         search_path: str,
@@ -132,11 +133,15 @@ class BaseScraper:
             
             best_match_link = None
             best_match_score = 0  # 0: no match, 1: 'in', 2: 'startswith', 3: 'exact'
+            target_title_fr = title_fr.lower().strip() if title_fr else None
+            if target_title_fr and target_title_fr != target_title:
+                titles_pattern = f"({escape(target_title)}|{escape(target_title_fr)})"
+            else:
+                titles_pattern = escape(target_title)
             # ^ : start with title
             # (?: - saison \d+)? : optional for title - (Saison X) pattern
-            # (?: \([^)]+\))? : optional for eventual (LANGUAGE) pattern at the end
             # $ : end of line
-            exact_series_pattern = rf"^{escape(target_title)}(?: - saison \d+)?.*$"
+            exact_series_pattern = rf"^{titles_pattern}(?: - saison \d+)?.*$"
 
             for node in search_nodes:
                 node_text = node.text(strip=True).lower()
@@ -149,13 +154,13 @@ class BaseScraper:
                     break
 
                 # 2. Start with (medium-high score)
-                elif node_text.startswith(target_title):
+                elif node_text.startswith(target_title) or (target_title_fr and node_text.startswith(target_title_fr)):
                     if best_match_score < 2:
                         best_match_link = current_link
                         best_match_score = 2
 
                 # 3. Contains (lowest score)
-                elif target_title in node_text:
+                elif target_title in node_text or (target_title_fr and target_title_fr in node_text):
                     if best_match_score < 1:
                         best_match_link = current_link
                         best_match_score = 1

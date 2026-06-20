@@ -52,6 +52,7 @@ class SeriesScraper(BaseScraper):
     async def search(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str] = None,
         wawacity_url: Optional[str] = None,
     ) -> List[Dict]:
@@ -59,7 +60,7 @@ class SeriesScraper(BaseScraper):
 
         try:
             # --- Search for series ---
-            search_result = await self._search_series(title, year, base_url)
+            search_result = await self._search_series(title, title_fr, year, base_url)
             if not search_result:
                 return []
 
@@ -83,10 +84,11 @@ class SeriesScraper(BaseScraper):
 
     # --- Initial series search ---
     async def _search_series(
-        self, title: str, year: Optional[str], base_url: str
+        self, title: str, title_fr: str | None, year: Optional[str], base_url: str
     ) -> Optional[Dict]:
         return await self._search_generic(
             title,
+            title_fr,
             year,
             base_url,
             search_path="series",

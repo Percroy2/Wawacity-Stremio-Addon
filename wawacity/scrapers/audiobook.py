@@ -28,13 +28,14 @@ class AudiobookScraper(BaseScraper):
     async def search(
         self,
         title: str,
+        title_fr: str | None,
         year: Optional[str] = None,
         wawacity_url: Optional[str] = None,
     ) -> List[Dict]:
         base_url = (wawacity_url or WAWACITY_URL).rstrip("/")
 
         try:
-            search_result = await self._search_audiobook(title, base_url)
+            search_result = await self._search_audiobook(title, title_fr, base_url)
             if not search_result:
                 return []
 
@@ -453,9 +454,10 @@ class AudiobookScraper(BaseScraper):
             ],
         }
 
-    async def _search_audiobook(self, title: str, base_url: str) -> Optional[Dict]:
+    async def _search_audiobook(self, title: str, title_fr: str | None, base_url: str) -> Optional[Dict]:
         return await self._search_generic(
             title,
+            title_fr,
             None,
             base_url,
             search_path=f"ebooks&s={AUDIOBOOK_SUBCATEGORY}",
