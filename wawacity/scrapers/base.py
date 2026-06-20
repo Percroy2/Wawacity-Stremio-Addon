@@ -136,7 +136,7 @@ class BaseScraper:
             # (?: - saison \d+)? : optional for title - (Saison X) pattern
             # (?: \([^)]+\))? : optional for eventual (LANGUAGE) pattern at the end
             # $ : end of line
-            exact_series_pattern = rf"^{escape(target_title)}(?: - saison \d+)?(?: \([^)]+\))?$"
+            exact_series_pattern = rf"^{escape(target_title)}(?: - saison \d+)?.*$"
 
             for node in search_nodes:
                 node_text = node.text(strip=True).lower()
