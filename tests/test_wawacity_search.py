@@ -93,3 +93,13 @@ async def test_search_all_from(data_regression):
     assert result is not None
 
     data_regression.check(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+@pytest.mark.xfail(reason="Wawacity translates the title of some media on the search screen")
+async def test_search_all_the_twilight_zone(data_regression):
+    result = await series_scraper.search("The Twilight Zone", "1959", BASE_URL)
+    assert result
+
+    data_regression.check(result)
