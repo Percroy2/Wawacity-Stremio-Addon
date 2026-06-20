@@ -101,11 +101,12 @@ if __name__ == "__main__":
         logger.log("STARTUP", f"FlareSolverr: {FLARESOLVERR_URL}")
     else:
         logger.log("STARTUP", "FlareSolverr: disabled")
-    
+
     # --- Run uvicorn ---
     uvicorn.run(
-        app, 
-        host="0.0.0.0", 
+        "wawacity.main:app",
+        host="0.0.0.0",
         port=PORT,
-        log_config=None
+        log_config=None,
+        reload=True,
     )

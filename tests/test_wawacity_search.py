@@ -1,0 +1,106 @@
+import os
+import re
+
+import pytest
+from wawacity.scrapers.audiobook import AudiobookScraper, audiobook_scraper
+from wawacity.scrapers.movie import MovieScraper, movie_scraper
+from wawacity.scrapers.series import SeriesScraper, series_scraper
+
+BASE_URL = "https://www.wawacity.cafe"
+PROJECT_ROOT = os.path.dirname(__file__)
+
+# If tests are launched all together for the first time they might fail due to too many parallel http request to wawacity.
+# Launch them one by one.
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+@pytest.mark.parametrize(
+    "scraper, search_query, search_query_fr, year, expected_slug, media_type",
+    [
+        # --- FILMS ---
+        # without year
+        (movie_scraper, "La Belle Verte", None, None, "la-belle-verte", "film"),
+        # with year
+        (movie_scraper, "La Belle Verte", None, "1996", "la-belle-verte", "film"),
+        # --- SERIES ---
+        # without year
+        (series_scraper, "The Boys", None, None, "the-boys", "serie"),
+        # with year
+        (series_scraper, "The Boys", None, "2019", "the-boys", "serie"),
+        # problematic title
+        (series_scraper, "FROM", None, "2022", "from", "serie"),
+    ],
+)
+async def test_wawacity_search_flow(
+    scraper: MovieScraper | SeriesScraper | AudiobookScraper,
+    search_query: str,
+    search_query_fr: str | None,
+    year: str | None,
+    expected_slug: str,
+    media_type: str,
+):
+    if scraper == movie_scraper:
+        result = await scraper._search_movie(
+            title=search_query, title_fr=search_query_fr, year=year, base_url=BASE_URL
+        )
+    else:
+        result = await scraper._search_series(
+            title=search_query, title_fr=search_query_fr, year=year, base_url=BASE_URL
+        )
+
+    assert result is not None
+
+    link = result["link"]
+
+    # Check media type
+    assert f"?p={media_type}" in link
+
+    # Check slug and numerical id
+    pattern = rf"id=\d+-{re.escape(expected_slug)}(?:-.*)?"
+
+    assert (
+        re.search(pattern, link) is not None
+    ), f"L'URL '{link}' does not match expected slug pattern '{expected_slug}'"
+
+    # Check query
+    assert search_query.lower() in result["text"].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+async def test_search_audiobook():
+    search_query = "La terre"
+    expected_detail_path = "?p=ebook&id=84348-la-terre-mile-zola-2026"
+
+    result = await audiobook_scraper._search_audiobook(search_query, None, BASE_URL)
+
+    assert result
+    assert result["link"] == expected_detail_path
+    assert search_query.lower() in result["text"].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+async def test_search_no_results():
+    result = await movie_scraper._search_movie("ImagiedMovie", None, None, BASE_URL)
+    assert result is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+async def test_search_all_from(data_regression):
+    result = await series_scraper.search("FROM", None, "2026", BASE_URL)
+    assert result
+
+    data_regression.check(result)
+
+
+@pytest.mark.asyncio
+@pytest.mark.vcr(record_mode="new_episodes")
+async def test_search_all_the_twilight_zone(data_regression):
+    title_fr = "La Quatrième Dimension"  # This would be provided by TMDB
+    result = await series_scraper.search("The Twilight Zone", title_fr, "1959", BASE_URL)
+    assert result
+
+    data_regression.check(result)

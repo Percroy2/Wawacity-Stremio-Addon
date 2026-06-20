@@ -1,6 +1,10 @@
 name: Docker Image CI
 
 on:
+  push:
+    branches:
+      - main
+      - sfranzz/improve_search
   workflow_dispatch:
 
 jobs:
@@ -29,10 +33,12 @@ jobs:
       uses: docker/metadata-action@v5
       with:
         images: |
-          ghcr.io/${{ github.repository }}
+          ghcr.io/${{ github.repository_owner }}/wawacity-stremio-addon
         tags: |
           type=raw,value=${{ steps.get-version.outputs.VERSION }},enable={{is_default_branch}}
           type=raw,value=latest,enable={{is_default_branch}}
+
+          type=ref,event=branch
 
     # Étape 3: Mise en place de QEMU
     - name: Set up QEMU

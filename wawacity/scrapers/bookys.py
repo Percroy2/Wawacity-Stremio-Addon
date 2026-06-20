@@ -27,14 +27,6 @@ BOOKYS_HEADERS = {
     "Accept-Language": "fr-FR,fr;q=0.9,en;q=0.8",
 }
 
-ALLOWED_HOSTERS = {
-    "1fichier": "1fichier",
-    "turbobit": "Turbobit",
-    "rapidgator": "Rapidgator",
-    "uptobox": "Uptobox",
-    "dailyuploads": "Dailyuploads",
-}
-
 HOSTER_URL_PATTERNS = (
     "1fichier.com",
     "turbobit.",
@@ -204,7 +196,7 @@ class BookysScraper(BaseScraper):
 
             host_label = host_link.text(strip=True).lower()
             hoster_key = None
-            for key in ALLOWED_HOSTERS:
+            for key in self.ALLOWED_HOSTERS.keys():
                 if key in host_label:
                     hoster_key = key
                     break
@@ -225,7 +217,7 @@ class BookysScraper(BaseScraper):
             if not host_url:
                 continue
 
-            hoster_name = ALLOWED_HOSTERS[hoster_key]
+            hoster_name = self.ALLOWED_HOSTERS[hoster_key]
             quality = fmt or "AudioBooks"
 
             results.append(

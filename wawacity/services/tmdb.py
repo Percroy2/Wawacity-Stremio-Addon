@@ -9,7 +9,7 @@ class TMDBService:
     
     # --- Metadata fetching ---
     async def get_metadata(self, imdb_id: str, tmdb_key: str) -> Optional[Dict]:
-        url = f"{self.BASE_URL}/find/{imdb_id}?external_source=imdb_id"
+        url = f"{self.BASE_URL}/find/{imdb_id}?external_source=imdb_id&language=fr-FR"
         headers = {
             "Authorization": f"Bearer {tmdb_key}",
             "Content-Type": "application/json",
@@ -24,16 +24,18 @@ class TMDBService:
                 # --- Check for movies ---
                 if data.get("movie_results"):
                     movie = data["movie_results"][0]
-                    title = movie["original_title"] if movie.get("original_language") == "fr" else movie["title"]
+                    title = movie["original_title"]
+                    title_fr =  movie["title"]
                     year = movie.get("release_date", "").split("-")[0]
-                    return {"title": title, "year": year, "type": "movie"}
+                    return {"title": title, "title_fr": title_fr, "year": year, "type": "movie"}
                 
                 # --- Check for series ---
                 elif data.get("tv_results"):
                     tv_show = data["tv_results"][0]
-                    title = tv_show["original_name"] if tv_show.get("original_language") == "fr" else tv_show["name"]
+                    title = tv_show["original_name"]
+                    title_fr = tv_show["name"]
                     year = tv_show.get("first_air_date", "").split("-")[0]
-                    return {"title": title, "year": year, "type": "series"}
+                    return {"title": title, "title_fr": title_fr, "year": year, "type": "series"}
             
             return None
             
