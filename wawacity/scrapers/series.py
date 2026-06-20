@@ -118,57 +118,33 @@ class SeriesScraper(BaseScraper):
                 }
             )
 
-            # --- Get other available pages/qualities ---
+            # --- Get other available seasons pages ---
             response = await http_client.get(series_url)
             if response.status_code == 200:
                 parser = HTMLParser(response.text)
 
-                # --- Other seasons ---
-                other_seasons = parser.css(
+                buttons = parser.css(
                     'ul.wa-post-list-ofLinks a[href^="?p=serie&id="]'
                 )
-                for season_node in other_seasons:
-                    season_link = season_node.attributes.get("href", "")
-                    if season_link and "saison" in season_link.lower():
-                        season_title = season_node.text(strip=True)
-                        if "(" in season_title and ")" in season_title:
-                            quality_part = season_title.split("(")[-1].replace(")", "")
-                        else:
-                            quality_part = "N/A"
-
-                        all_series_pages.append(
-                            {
-                                "quality": quality_part,
-                                "language": "N/A",
-                                "page_path": season_link,
-                            }
-                        )
-
-                # --- Other qualities/languages ---
-                other_qualities = parser.css(
-                    'ul.wa-post-list-ofLinks a[href^="?p=serie&id="]:has(button)'
-                )
-                for quality_node in other_qualities:
-                    quality_link = quality_node.attributes.get("href", "")
-                    if quality_link and "saison" not in quality_link.lower():
-                        button_node = quality_node.css_first("button")
-                        if button_node:
-                            button_text = button_node.text(strip=True)
-                            quality_parts = (
-                                button_text.replace("<i>", "")
-                                .replace("</i>", "")
-                                .strip()
-                            )
-                        else:
-                            quality_parts = "N/A"
-
-                        all_series_pages.append(
-                            {
-                                "quality": quality_parts,
-                                "language": quality_parts,
-                                "page_path": quality_link,
-                            }
-                        )
+                for button_node in buttons:
+                    button_text = button_node.text(strip=True)
+                    button_link = button_node.attributes.get("href", "")
+                    quality = "N/A"
+                    language = "N/A"
+                    if "saison" in button_text.lower():
+                        # Season button
+                        if "(" in button_text and ")" in button_text:
+                            quality = button_text.split("(")[-1].replace(")", "")  # TODO: Remove ?
+                    else:
+                        # Quality button
+                        quality, language = self._parse_series_attributes(button_text)
+                    all_series_pages.append(
+                        {
+                            "quality": quality,
+                            "language": language,
+                            "page_path": button_link,
+                        }
+                    )
 
             # --- Process each page in parallel ---
             page_tasks = []
